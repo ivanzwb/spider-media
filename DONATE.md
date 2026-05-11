@@ -5,11 +5,11 @@
 
 ## 微信赞赏
 
-<img src="assets/donate/wechat.png" alt="微信赞赏码" width="240" />
+<img src="assets/donate/wechat.jpg" alt="微信赞赏码" width="240" />
 
 ## 支付宝
 
-<img src="assets/donate/alipay.png" alt="支付宝收款码" width="240" />
+<img src="assets/donate/alipay.jpg" alt="支付宝收款码" width="240" />
 
 ---
 
