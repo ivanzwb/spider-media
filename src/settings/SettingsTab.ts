@@ -43,60 +43,17 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 		containerEl.createEl("h3", { text: "微信公众号" });
 
 		new Setting(containerEl)
-			.setName("Chrome 远程调试 URL")
+			.setName("发布方式")
 			.setDesc(
-				"启动 Chrome 时加 --remote-debugging-port=9222；填写 http://127.0.0.1:9222 后插件将复用现有浏览器实例",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("http://127.0.0.1:9222")
-					.setValue(this.plugin.settings.wechat.browserURL)
-					.onChange(async (value) => {
-						this.plugin.settings.wechat.browserURL = value.trim();
-						await this.plugin.saveSettings();
-					}),
+				"内嵌 Electron webview，partition 持久会话。命令面板执行「打开嵌入式微信公众号浏览器」即可扫码登录（一次即可），后续发布会自动注入到该 webview。",
 			);
 
-		new Setting(containerEl)
-			.setName("Chrome 可执行文件路径")
-			.setDesc("当未启用远程调试时，由 puppeteer-core 启动该 Chrome")
-			.addText((text) =>
-				text
-					.setPlaceholder("C:/Program Files/Google/Chrome/Application/chrome.exe")
-					.setValue(this.plugin.settings.wechat.executablePath)
-					.onChange(async (value) => {
-						this.plugin.settings.wechat.executablePath = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
+		containerEl.createEl("h3", { text: "头条号" });
 
 		new Setting(containerEl)
-			.setName("puppeteer-core 模块绝对路径")
+			.setName("发布方式")
 			.setDesc(
-				"Obsidian 沙箱无法解析 bare 模块名。填入 puppeteer-core 的 node_modules 路径（例如 D:/tools/spider-media/node_modules/puppeteer-core）启用自动化；留空则始终走剪贴板兜底",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("绝对路径，留空为禁用")
-					.setValue(this.plugin.settings.wechat.puppeteerModulePath)
-					.onChange(async (value) => {
-						this.plugin.settings.wechat.puppeteerModulePath = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("自动化超时 (ms)")
-			.addText((text) =>
-				text
-					.setValue(String(this.plugin.settings.wechat.timeoutMs))
-					.onChange(async (value) => {
-						const n = Number(value);
-						if (Number.isFinite(n) && n > 0) {
-							this.plugin.settings.wechat.timeoutMs = n;
-							await this.plugin.saveSettings();
-						}
-					}),
+				"同微信，使用嵌入式 webview 方式。命令面板执行「打开嵌入式头条号浏览器」登录后即可发布。",
 			);
 
 		containerEl.createEl("h3", { text: "默认排版参数" });

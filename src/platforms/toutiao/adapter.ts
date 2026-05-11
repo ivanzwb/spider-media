@@ -11,13 +11,11 @@ import {
 	type PublishResult,
 	type Template,
 } from "@/platforms/base";
-import { ToutiaoAutomator, type ToutiaoAutomatorOptionsProvider } from "./automator";
 import { ToutiaoFormatter } from "./formatter";
 import { TOUTIAO_TEMPLATES } from "./templates";
 
 export interface ToutiaoAdapterOptions {
 	context: PlatformContext;
-	automator: ToutiaoAutomatorOptionsProvider;
 	noteDir: string;
 	imageInlineThresholdKB?: number;
 }
@@ -35,7 +33,6 @@ export class ToutiaoAdapter extends PlatformAdapter {
 	private postProcessor = new PostProcessor();
 	private mermaid = new MermaidConverter();
 	private images: ImageManager;
-	private automator: ToutiaoAutomator;
 
 	constructor(private options: ToutiaoAdapterOptions) {
 		super();
@@ -43,7 +40,6 @@ export class ToutiaoAdapter extends PlatformAdapter {
 			inlineThresholdKB: options.imageInlineThresholdKB ?? 100,
 			noteDir: options.noteDir,
 		});
-		this.automator = new ToutiaoAutomator(options.automator);
 	}
 
 	getTemplates(): Template[] {
@@ -69,12 +65,20 @@ export class ToutiaoAdapter extends PlatformAdapter {
 		});
 	}
 
-	publish(
-		html: string,
-		title: string,
-		credentials: Credentials,
+	/**
+	 * 发布走 Obsidian 内嵌 webview（ToutiaoBrowserView），
+	 * UI 层 publish() 直接路由到该视图，不会走到此方法。
+	 */
+	async publish(
+		_html: string,
+		_title: string,
+		_credentials: Credentials,
 	): Promise<PublishResult> {
-		return this.automator.publish(html, title, credentials);
+		return {
+			success: false,
+			stage: "fallback",
+			message: "请使用嵌入式头条号浏览器发布。",
+		};
 	}
 
 	setNoteDir(dir: string): void {

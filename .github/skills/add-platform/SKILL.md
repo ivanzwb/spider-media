@@ -34,39 +34,43 @@ If either is missing, ask the user before scaffolding.
    ├── index.ts            // exports the adapter instance
    ├── adapter.ts          // implements PlatformAdapter
    ├── formatter.ts        // marked extensions + juice CSS for this platform
-   ├── automator.ts        // puppeteer-core flow (lazy import + clipboard fallback)
    └── templates/
        └── default.ts      // default template (HTML skeleton + CSS)
    ```
+   Plus a webview view at `src/ui/<PlatformId>BrowserView.ts` mirroring `WeChatBrowserView.ts` / `ToutiaoBrowserView.ts`.
    If `src/platforms/base/` (shared types) does not yet exist, create it first with the `PlatformAdapter`, `PlatformConfig`, and `PublishCredentials` types per ARCHITECTURE.md §3.3.
 
 3. **Implement the adapter skeleton**
-   - `config`: `{ id: '<platform-id>', name: '<Display Name>', loginUrl: '...', editorUrl: '...' }`
+   - `meta`: `{ id: '<platform-id>', name: '<Display Name>', icon, color, isDesktopOnly: true }`
    - `format(md, template, tweaks)`: delegate to `formatter.ts` (marked extensions → juice).
-   - `publish(html, title, credentials)`: delegate to `automator.ts`. Wrap the puppeteer call in `try/catch` and on failure call the shared clipboard fallback (per [esbuild.config.mjs](../../../esbuild.config.mjs#L31)).
+   - `publish(html, title, credentials)`: returns a fallback `PublishResult` ("请使用嵌入式<平台>浏览器发布"). Real publishing is done by the embedded `<webview>` view, not this method.
    - `getTemplates()`: return templates from `./templates/`.
 
 4. **Register in `src/main.ts`**
    ```ts
    import { <platformId>Adapter } from "@/platforms/<platform-id>";
+   import { <PlatformId>BrowserView, VIEW_TYPE_<PLATFORM>_BROWSER } from "@/ui/<PlatformId>BrowserView";
    // inside onload():
-   this.registerPlatform(<platformId>Adapter);
+   this.registerView(VIEW_TYPE_<PLATFORM>_BROWSER, (leaf) => new <PlatformId>BrowserView(leaf, this));
+   this.platforms.set(adapter.meta.id, adapter);
+   this.addCommand({ id: "open-<platform-id>-embedded-browser", name: "打开嵌入式<平台>浏览器", callback: () => void this.open<PlatformId>Browser() });
    ```
-   Also add a command `publish-to-<platform-id>` mirroring the existing wechat command shape.
+   Also wire `PlatformEditorView.publish()` to route to the new webview when `meta.id` matches.
 
 5. **Verify**
    - Run `npm run build` — must pass `tsc -noEmit` and esbuild bundle.
-   - Confirm no new dependency was introduced that needs adding to esbuild `external` (see [esbuild.config.mjs](../../../esbuild.config.mjs#L17-L33)). If yes, add it.
+   - No new heavy runtime dependency required (we no longer use puppeteer-core).
 
 6. **Update [README.md](../../../README.md)**
    In the "支持平台" table, add or flip the row to ✅/🔜 with a one-line capability summary. Keep alphabetical/中文 ordering consistent with existing rows.
 
-7. **Do not** add unit tests, mobile-only code paths, or any direct top-level `import 'puppeteer-core'` (must be `await import('puppeteer-core')` inside automator.ts).
+7. **Do not** add unit tests, mobile-only code paths, or any direct top-level `import 'puppeteer-core'`. Puppeteer is no longer used — publishing flows must run inside the embedded `<webview>`.
 
 ## Definition of Done
 
-- `src/platforms/<platform-id>/` exists with all five files above.
-- Adapter is registered and discoverable via the new command.
+- `src/platforms/<platform-id>/` exists with adapter / formatter / templates / index.
+- `src/ui/<PlatformId>BrowserView.ts` registered + command added.
+- Adapter is registered and discoverable; `PlatformEditorView.publish()` routes to the new webview.
 - `npm run build` is green.
 - README support table reflects new status.
 - No `as any` / `@ts-ignore` introduced (see [AGENTS.md](../../../AGENTS.md) TypeScript 规范).

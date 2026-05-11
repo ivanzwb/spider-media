@@ -11,13 +11,11 @@ import {
 	type PublishResult,
 	type Template,
 } from "@/platforms/base";
-import { WeChatAutomator, type WeChatAutomatorOptionsProvider } from "./automator";
 import { WeChatFormatter } from "./formatter";
 import { WECHAT_TEMPLATES } from "./templates";
 
 export interface WeChatAdapterOptions {
 	context: PlatformContext;
-	automator: WeChatAutomatorOptionsProvider;
 	/** 当前笔记目录 (用于解析图片相对路径) */
 	noteDir: string;
 	/** 小图内嵌阈值 KB */
@@ -37,7 +35,6 @@ export class WeChatAdapter extends PlatformAdapter {
 	private postProcessor = new PostProcessor();
 	private mermaid = new MermaidConverter();
 	private images: ImageManager;
-	private automator: WeChatAutomator;
 
 	constructor(private options: WeChatAdapterOptions) {
 		super();
@@ -45,7 +42,6 @@ export class WeChatAdapter extends PlatformAdapter {
 			inlineThresholdKB: options.imageInlineThresholdKB ?? 100,
 			noteDir: options.noteDir,
 		});
-		this.automator = new WeChatAutomator(options.automator);
 	}
 
 	getTemplates(): Template[] {
@@ -71,12 +67,21 @@ export class WeChatAdapter extends PlatformAdapter {
 		});
 	}
 
-	publish(
-		html: string,
-		title: string,
-		credentials: Credentials,
+	/**
+	 * 发布走 Obsidian 内嵌 webview（WeChatBrowserView），
+	 * UI 层 publish() 直接路由到该视图，不会走到此方法。
+	 * 保留实现仅为满足 PlatformAdapter 契约。
+	 */
+	async publish(
+		_html: string,
+		_title: string,
+		_credentials: Credentials,
 	): Promise<PublishResult> {
-		return this.automator.publish(html, title, credentials);
+		return {
+			success: false,
+			stage: "fallback",
+			message: "请使用嵌入式微信公众号浏览器发布。",
+		};
 	}
 
 	/** 更新当前笔记目录 (UI 切换文件时调用) */

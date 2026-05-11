@@ -1,0 +1,123 @@
+/* ========== Spider Media — PlatformEditorView ========== */
+
+.spider-media-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.spider-media-view .sm-toolbar,
+.spider-media-view .sm-file-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
+}
+
+.spider-media-view .sm-file-bar-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.spider-media-view .sm-file-bar-name {
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+.spider-media-view .sm-select,
+.spider-media-view .sm-btn {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.spider-media-view .sm-btn-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.spider-media-view .sm-main {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.spider-media-view .sm-pane {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.spider-media-view .sm-pane-title {
+  padding: 4px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
+}
+
+.spider-media-view .sm-preview {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px;
+  background: var(--background-primary);
+}
+
+.spider-media-view .sm-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
+}
+
+.spider-media-view .sm-status {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ========== Spider Media — Browser views (微信 / 头条号) ========== */
+
+.spider-media-browser-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.spider-media-browser-view .smb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
+}
+
+.spider-media-browser-view .smb-toolbar button {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.spider-media-browser-view .smb-status {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.spider-media-browser-view webview {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}

@@ -123,23 +123,24 @@ export class MermaidConverter {
 			}
 			const { width, height } = this.parseSvgSize(normalized);
 			const scale = window.devicePixelRatio > 1 ? 2 : 1.5; // 提高清晰度
-			const blob = new Blob([normalized], { type: "image/svg+xml;charset=utf-8" });
-			const url = URL.createObjectURL(blob);
-			try {
-				const img = await this.loadImage(url);
-				const canvas = document.createElement("canvas");
-				canvas.width = Math.max(1, Math.round(width * scale));
-				canvas.height = Math.max(1, Math.round(height * scale));
-				const ctx = canvas.getContext("2d");
-				if (!ctx) return null;
-				ctx.fillStyle = "#ffffff";
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-				ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-				const dataUrl = canvas.toDataURL("image/png");
-				return { dataUrl, width: Math.round(width) };
-			} finally {
-				URL.revokeObjectURL(url);
-			}
+			// 用 data URL 而非 Blob URL：Blob URL 在 Electron/Chromium 里会被当成
+			// 跨域请求（无 CORS 响应头），导致画布被污染、toDataURL 抛 SecurityError。
+			// 同时不要给 <img> 设置 crossOrigin，data URL 是 same-origin 的。
+			const utf8 = new TextEncoder().encode(normalized);
+			let bin = "";
+			for (let i = 0; i < utf8.length; i++) bin += String.fromCharCode(utf8[i]);
+			const dataUrl = `data:image/svg+xml;base64,${btoa(bin)}`;
+			const img = await this.loadImage(dataUrl);
+			const canvas = document.createElement("canvas");
+			canvas.width = Math.max(1, Math.round(width * scale));
+			canvas.height = Math.max(1, Math.round(height * scale));
+			const ctx = canvas.getContext("2d");
+			if (!ctx) return null;
+			ctx.fillStyle = "#ffffff";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+			const pngDataUrl = canvas.toDataURL("image/png");
+			return { dataUrl: pngDataUrl, width: Math.round(width) };
 		} catch (err) {
 			console.warn("[spider-media] SVG → PNG 失败", err);
 			return null;
@@ -149,7 +150,6 @@ export class MermaidConverter {
 	private loadImage(src: string): Promise<HTMLImageElement> {
 		return new Promise((resolve, reject) => {
 			const img = new Image();
-			img.crossOrigin = "anonymous";
 			img.onload = () => resolve(img);
 			img.onerror = (e) => reject(e);
 			img.src = src;

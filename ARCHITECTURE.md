@@ -1,7 +1,7 @@
-# Obsidian Media Publisher — 架构设计文档
+# Spider Media — 架构设计文档
 
-> 版本: v0.1.0 (草案)
-> 目标: Obsidian 插件，将 Markdown 文章一键发布到微信公众号、头条号等自媒体平台
+> Obsidian 插件，将 Markdown 文章一键发布到微信公众号、头条号等自媒体平台。
+> 发布通道基于 Obsidian 进程内嵌的 Electron `<webview>` 完成。
 
 ---
 
@@ -16,7 +16,7 @@
    - 3.4 [Markdown 格式化管线](#34-markdown-格式化管线)
    - 3.5 [Mermaid 转换](#35-mermaid-转换)
    - 3.6 [图片管理](#36-图片管理)
-   - 3.7 [浏览器自动化引擎](#37-浏览器自动化引擎)
+   - 3.7 [嵌入式 Webview 发布视图](#37-嵌入式-webview-发布视图)
    - 3.8 [UI 层 (PlatformEditorView)](#38-ui-层-platformeditorview)
    - 3.9 [设置与持久化](#39-设置与持久化)
 4. [扩展新平台](#4-扩展新平台)
@@ -46,7 +46,8 @@ Obsidian 用户写好 Markdown 笔记后，需要手动复制内容到各个自�
 
 - 不提供文章管理、定时发布等 CMS 功能
 - 不替代平台后台的最终发布按钮（用户始终 Review 后手动发布）
-- 不实现移动端支持 (`isDesktopOnly: true`)
+- 不实现移动端支持 (`isDesktopOnly: true`，依赖 Electron `<webview>`)
+- 不依赖外部 Chrome 或浏览器自动化框架；发布全部在 Obsidian 进程内的嵌入 webview 完成
 
 ---
 
@@ -55,86 +56,70 @@ Obsidian 用户写好 Markdown 笔记后，需要手动复制内容到各个自�
 ### 2.1 四层架构
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         OBSIDIAN PLUGIN LAYER                     │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
-│  │ Ribbon   │  │  Commands    │  │  SettingsTab              │  │
-│  │ Icon     │  │  (侧边栏/发布) │  │  (平台配置/Cookie/模板)   │  │
-│  └────┬─────┘  └──────┬───────┘  └───────────┬───────────────┘  │
-│       │               │                      │                  │
-│  ┌────▼───────────────▼──────────────────────▼────────────────┐  │
-│  │              PlatformEditorView (ItemView)                  │  │
-│  │  ┌────────────────┐ ┌──────────────┐ ┌──────────────────┐  │  │
-│  │  │ EditorPane     │ │ PreviewPane  │ │ SettingsPane     │  │  │
-│  │  │ (MD source)    │ │ (HTML预览)   │ │ (模板/字号/颜色)  │  │  │
-│  │  └────────────────┘ └──────────────┘ └──────────────────┘  │  │
-│  └──────────────────────────┬───────────────────────────────────┘  │
-└─────────────────────────────┼─────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                  OBSIDIAN PLUGIN LAYER (main.ts)                   │
+│  Ribbon / Commands / SettingsTab / 三个 ItemView：                 │
+│   ── PlatformEditorView   发布控制台（预览 + 平台/模板选择 + 发布）│
+│   ── WeChatBrowserView    微信公众号嵌入 webview                    │
+│   ── ToutiaoBrowserView   头条号嵌入 webview                        │
+└─────────────────────────────┬──────────────────────────────────────┘
                               │
-┌─────────────────────────────▼─────────────────────────────────────┐
-│                        CORE PIPELINE                               │
-│                                                                     │
-│  ┌──────────────┐   ┌──────────────────┐   ┌───────────────────┐  │
-│  │ Markdown     │   │  Mermaid         │   │  Image            │  │
-│  │ Parser       │──►│  Converter       │──►│  Manager          │  │
-│  │ (marked)     │   │  (→PNG/SVG)      │   │  (base64/upload)  │  │
-│  └──────┬───────┘   └──────────────────┘   └───────────────────┘  │
-│         │                                                          │
-│         ▼                                                          │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              PLATFORM FORMATTER                                │  │
-│  │  ┌──────────────────┐ ┌──────────────────┐                   │  │
-│  │  │ WeChatFormatter  │ │ TouTiaoFormatter │  ...               │  │
-│  │  │ (marked ext.)    │ │ (marked ext.)    │                   │  │
-│  │  └────────┬─────────┘ └────────┬─────────┘                   │  │
-│  │           │                    │                              │  │
-│  │  ┌────────▼────────────────────▼──────────────────────────┐  │  │
-│  │  │          TemplateEngine + InlineCSS (juice)             │  │  │
-│  │  └─────────────────────────────────────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                              │                                      │
-│  ┌───────────────────────────▼──────────────────────────────────┐  │
-│  │              PUBLISHER (AUTOMATOR)                            │  │
-│  │  ┌──────────────────┐ ┌──────────────────┐                  │  │
-│  │  │ WeChatAutomator  │ │ TouTiaoAutomator │  ...              │  │
-│  │  │ (Puppeteer)      │ │ (Puppeteer)      │                  │  │
-│  │  └──────────────────┘ └──────────────────┘                  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────▼──────────────────────────────────────┐
+│                          CORE PIPELINE                              │
+│  MarkdownParser → MermaidConverter → ImageManager                   │
+│           │                                                         │
+│           ▼                                                         │
+│  PlatformFormatter（微信 / 头条号 marked 扩展）                      │
+│           │                                                         │
+│           ▼                                                         │
+│  PostProcessor（模板包装 + juice 内联 CSS + tweaks + 后处理修复）    │
+└─────────────────────────────┬──────────────────────────────────────┘
+                              │ (title, html)
+┌─────────────────────────────▼──────────────────────────────────────┐
+│                EMBEDDED WEBVIEW INJECTION                           │
+│  WeChatBrowserView   → webview.executeJavaScript(注入脚本)          │
+│    └─ 正文：__MP_Editor_JSAPI__.invoke("mp_editor_set_content")     │
+│    └─ 标题：ProseMirror contenteditable 轮询 + execCommand 写入     │
+│    └─ 作者：从账号顶栏读取昵称写入 input                            │
+│  ToutiaoBrowserView  → webview.executeJavaScript(注入脚本)          │
+│    └─ 标题：execCommand("insertText") 兼容 React/Vue v-model        │
+│    └─ 正文：ClipboardEvent('paste') 携 text/html 投到 ProseMirror   │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 数据流
 
 ```
-MD Source
+MD Source（当前活动 TFile）
    │
    ▼
-MarkdownParser.parse(input)
+ MarkdownParser（marked + 平台扩展）
    │
-   ├── Mermaid 检测 → MermaidConverter → <img src="diagram-xxx.png">
-   ├── 图片引用   → ImageManager      → <img src="base64" | 图床URL>
-   ├── 代码块     → 保留格式 + 高亮样式
-   ├── 标准 MD    → marked 默认 renderer
-   └── 平台特定   → PlatformFormatter 定制 renderer
-   │
-   ▼
-(中间 HTML)
+   ├── ```mermaid``` 代码块 → MermaidConverter → PNG <img>（本地渲染 + base64）
+   ├── 本地图片            → ImageManager     → base64 / vault 路径
+   ├── 代码块              → 逐行 <br/> 拼接，white-space:pre-wrap
+   └── 其他 token          → 平台定制 renderer
    │
    ▼
-TemplateEngine.apply(html, template)
+ PostProcessor
+   ├── 模板包装（{{CONTENT}} / {{TWEAK_STYLES}}）
+   ├── juice 内联 CSS（公众号编辑器不认 class，必须 inline）
+   ├── 移除全部 <style> 标签（避免 ProseMirror schema 因首子非块而插入空 <p>）
+   ├── compactLists 去除 <li> 间空白
+   └── glueCjkPunctuation 修正中文标点的换行/标签嵌套
    │
    ▼
-juice(html, css)  →  CSS 全部内联化
+  HTML（title 由 currentTitle 单独传递，正文不再含 H1）
    │
    ▼
-(平台就绪 HTML)
+  PlatformEditorView.publish()
+   │
+   ├─ wechat   → plugin.openWeChatBrowser()  → view.submitPayload({title, html})
+   └─ toutiao  → plugin.openToutiaoBrowser() → view.submitPayload({title, html})
    │
    ▼
-Publisher.publish(html, platform, credentials)
-   ├── BrowserAutomator.launch()
-   ├── 打开平台后台页面
-   ├── 填充内容到编辑器
-   └── 等待用户操作
+  *BrowserView.runInject()  →  webview.executeJavaScript(注入脚本)
+   └─ 用户在 webview 内审查后手动点「发布」
 ```
 
 ---
@@ -143,59 +128,41 @@ Publisher.publish(html, platform, credentials)
 
 ### 3.1 插件入口 (main.ts)
 
-**职责**: 管理插件生命周期，注册所有组件
+**职责**：生命周期、视图注册、命令注册、平台适配器注册、设置加载/保存。业务逻辑下沉到对应模块。
+
+实际行为概览（详见 [src/main.ts](src/main.ts)）：
 
 ```typescript
-// src/main.ts  — 伪代码结构
-
-export default class MediaPublisherPlugin extends Plugin {
-  private platforms: Map<string, PlatformAdapter> = new Map();
+export default class SpiderMediaPlugin extends Plugin {
+  settings!: SpiderMediaSettings;
+  platforms = new Map<string, PlatformAdapter>();
 
   async onload() {
-    // 1. 注册平台适配器
-    this.registerPlatform(new WeChatAdapter());
-    this.registerPlatform(new TouTiaoAdapter());
+    await this.loadSettings();
+    this.registerPlatforms();                 // WeChatAdapter / ToutiaoAdapter
 
-    // 2. 注册自定义视图 (右侧滑出编辑器)
-    this.registerView(
-      VIEW_TYPE_MEDIA_PUBLISHER,
-      (leaf) => new PlatformEditorView(leaf, this.platforms)
-    );
+    this.registerView(VIEW_TYPE_SPIDER_MEDIA,        (leaf) => new PlatformEditorView(leaf, this));
+    this.registerView(VIEW_TYPE_WECHAT_BROWSER,      (leaf) => new WeChatBrowserView(leaf, this));
+    this.registerView(VIEW_TYPE_TOUTIAO_BROWSER,     (leaf) => new ToutiaoBrowserView(leaf, this));
 
-    // 3. Ribbon 图标
-    this.addRibbonIcon("message-square", "自媒体发布", () => {
-      this.activateEditorView();
-    });
+    this.addRibbonIcon("message-square", "打开自媒体发布编辑器", () => void this.activateView());
+    this.addCommand({ id: "open-spider-media-view",          name: "打开自媒体发布编辑器",        callback: () => void this.activateView() });
+    this.addCommand({ id: "open-wechat-embedded-browser",    name: "打开嵌入式微信公众号浏览器", callback: () => void this.openWeChatBrowser() });
+    this.addCommand({ id: "open-toutiao-embedded-browser",   name: "打开嵌入式头条号浏览器",     callback: () => void this.openToutiaoBrowser() });
 
-    // 4. 命令
-    this.addCommand({
-      id: "open-media-publisher",
-      name: "打开自媒体发布编辑器",
-      callback: () => this.activateEditorView(),
-    });
-
-    this.addCommand({
-      id: "publish-to-wechat",
-      name: "同步到公众号",
-      checkCallback: (checking) => {
-        if (checking) return this.isCurrentFileValid();
-        this.publishTo("wechat");
-      },
-    });
-
-    // 5. 设置页
-    this.addSettingTab(new SettingsTab(this.app, this));
+    this.addSettingTab(new SpiderMediaSettingTab(this.app, this));
   }
 
-  async onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_MEDIA_PUBLISHER);
-  }
-
-  registerPlatform(adapter: PlatformAdapter) {
-    this.platforms.set(adapter.config.id, adapter);
-  }
+  /** 在主编辑区开一个独立 tab 放嵌入 webview */
+  async openWeChatBrowser():  Promise<WeChatBrowserView>  { /* 共用 openEmbeddedBrowser */ }
+  async openToutiaoBrowser(): Promise<ToutiaoBrowserView> { /* 共用 openEmbeddedBrowser */ }
 }
 ```
+
+要点：
+- 三个视图通过 `VIEW_TYPE_*` 常量注册，`onunload` 全部 detach
+- `openEmbeddedBrowser` 强制把 webview 开在 rootSplit（主编辑区），避免落到右侧/底部小窗
+- 设置使用 `loadData()` / `saveData()`，启动时与 `DEFAULT_SETTINGS` 浅合并
 
 ### 3.2 Core Pipeline
 
@@ -367,22 +334,15 @@ export interface PlatformMeta {
   name: string;             // "微信公众号" | "头条号"
   icon: string;             // Obsidian icon identifier
   color: string;            // 主题色
-  isDesktopOnly: boolean;   // 是否需要 Puppeteer
+  isDesktopOnly: boolean;   // Spider Media 当前所有适配器都为 true（依赖 Electron <webview>）
 }
 
-/** 平台凭据 */
-export interface Credentials {
-  type: "cookie" | "token" | "password";
-  data: Record<string, string>;
-}
-
-/** 发布结果 */
+/** 发布结果（嵌入式 webview 模式下，真实发布动作由用户在 webview 中手动完成） */
 export interface PublishResult {
   success: boolean;
-  stage: "login" | "fill" | "preview" | "done";
+  stage: "format" | "fill" | "fallback" | "done";
   message: string;
   url?: string;
-  browserPid?: number;      // 浏览器进程 ID (保持打开供用户操作)
 }
 
 export abstract class PlatformAdapter {
@@ -398,24 +358,27 @@ export abstract class PlatformAdapter {
     tweaks: FormatTweaks,
   ): Promise<string>;
 
-  /** 发布: 打开后台编辑器并填充内容 */
+  /**
+   * 发布占位接口。
+   * 微信 / 头条号目前由 PlatformEditorView 路由到对应的 *BrowserView 完成注入，
+   * 此处仅返回 fallback 提示；新增平台若没有内置 BrowserView，可在此实现自动化逻辑。
+   */
   abstract publish(
     html: string,
     title: string,
-    credentials: Credentials,
   ): Promise<PublishResult>;
 
-  /** 验证凭据是否有效 */
-  abstract validateCredentials(credentials: Credentials): Promise<boolean>;
+  /** 切换当前笔记所在目录，用于解析相对路径图片 */
+  abstract setNoteDir(dir: string): void;
 }
 ```
 
 #### 3.3.2 WeChatAdapter 实现
 
 ```typescript
-// src/platforms/wechat/WeChatAdapter.ts
+// src/platforms/wechat/adapter.ts
 
-export class WeChatAdapter extends PlatformAdapter {
+export class WeChatAdapter implements PlatformAdapter {
   meta: PlatformMeta = {
     id: "wechat",
     name: "微信公众号",
@@ -425,52 +388,38 @@ export class WeChatAdapter extends PlatformAdapter {
   };
 
   private formatter = new WeChatFormatter();
-  private automator = new WeChatAutomator();
-  private templateEngine = new TemplateEngine();
   private postProcessor = new PostProcessor();
+  private imageManager?: ImageManager;
 
   async getTemplates(): Promise<Template[]> {
-    return [
-      { id: "wechat-default", name: "默认精简", category: "general", styles: defaultWeChatCSS },
-      { id: "wechat-clean", name: "清新极简", category: "clean", styles: cleanWeChatCSS },
-      { id: "wechat-business", name: "沉稳商务", category: "business", styles: businessWeChatCSS },
-      // ... 可以基于 mspringjade/wechat-formatter 的 72 套模板适配
-    ];
+    return WECHAT_TEMPLATES;     // src/platforms/wechat/templates/index.ts
   }
 
   async format(markdown: string, template: Template, tweaks: FormatTweaks): Promise<string> {
-    // 1. 解析 MD → HTML (使用 WeChat 特定 marked 扩展)
     const parser = new MarkdownParser(this.formatter.getExtensions());
     let html = await parser.parse(markdown, {
       platformId: "wechat",
-      mermaidConverter: (code) => this.convertMermaid(code),
-      imageResolver: (src) => this.resolveImage(src),
+      mermaidConverter: (code) => MermaidConverter.render(code, { format: "png" }),
+      imageResolver:    (src)  => this.imageManager?.resolve(src) ?? src,
     });
-
-    // 2. 模板包装 + 样式内联
-    html = this.postProcessor.process(html, {
+    return this.postProcessor.process(html, {
       template: template.html,
       templateStyles: template.styles,
       formatTweaks: tweaks,
     });
-
-    return html;
   }
 
-  async publish(html: string, title: string, credentials: Credentials): Promise<PublishResult> {
-    return this.automator.publish(html, title, credentials);
+  /** 实际发布走 WeChatBrowserView，这里仅做兜底提示 */
+  async publish(): Promise<PublishResult> {
+    return {
+      success: false,
+      stage: "fallback",
+      message: "请使用嵌入式微信公众号浏览器发布。",
+    };
   }
 
-  async validateCredentials(credentials: Credentials): Promise<boolean> {
-    return this.automator.validateSession(credentials);
-  }
-
-  private async convertMermaid(code: string): Promise<string> {
-    return MermaidConverter.render(code, { format: "png", width: 600 });
-  }
-
-  private async resolveImage(src: string): Promise<string> {
-    return ImageManager.resolve(src, { platform: "wechat" });
+  setNoteDir(dir: string): void {
+    this.imageManager = new ImageManager(dir);
   }
 }
 ```
@@ -647,8 +596,6 @@ MD Source
 |------|------|------|------|--------|
 | **Obsidian 内置 Mermaid + Canvas API** | 无 (利用 Obsidian 已加载的 mermaid) | 高 | 快 | ⭐⭐⭐⭐⭐ |
 | mermaid.ink HTTP API | 网络请求 | 中 | 中 (需网络) | ⭐⭐⭐ |
-| Puppeteer 渲染 | puppeteer-core | 最高 | 慢 | ⭐⭐⭐⭐ (备选) |
-| mermaid-cli | puppeteer | 最高 | 慢 | ⭐⭐ (太重) |
 
 #### 3.5.2 推荐方案: Obsidian 内置 Mermaid
 
@@ -810,410 +757,205 @@ export class ImageManager {
 }
 ```
 
-### 3.7 浏览器自动化引擎
+### 3.7 嵌入式 Webview 发布视图
 
-#### 3.7.1 BrowserAutomator
+微信公众号 / 头条号的发布通道由 Obsidian 进程内的 Electron `<webview>` 标签承载。
 
-```typescript
-// src/automator/BrowserAutomator.ts
+#### 3.7.1 关键特性
 
-import * as puppeteer from "puppeteer-core";
+- 零额外依赖：直接使用 Obsidian 自带的 `<webview>` 能力
+- 同进程 `executeJavaScript`：调用即可拿到返回值，便于错误诊断
+- `partition="persist:..."` 持久会话：扫码登录一次长期复用
+- 注入失败时用户仍可在 webview 中手动操作平台原生编辑器
 
-export class BrowserAutomator {
-  private browser: puppeteer.Browser | null = null;
-  private page: puppeteer.Page | null = null;
+#### 3.7.2 视图实现
 
-  /**
-   * 启动/复用浏览器
-   *
-   * 策略:
-   * 1. 优先连接用户已打开的 Chrome (通过 CDP)
-   *    → 用户可见、可调试、Cookie 共享
-   * 2. 回退: 启动内置 Chromium (puppeteer-core)
-   */
-  async launch(options?: { headless?: boolean }): Promise<puppeteer.Page> {
-    // 尝试连接已有 Chrome 实例
-    try {
-      this.browser = await puppeteer.connect({
-        browserURL: "http://127.0.0.1:9222",
-        defaultViewport: { width: 1280, height: 800 },
-      });
-    } catch {
-      // 启动新的 Chromium
-      this.browser = await puppeteer.launch({
-        headless: options?.headless ?? false,
-        executablePath: this.findChrome(),
-        args: ["--no-sandbox", "--disable-gpu"],
-      });
-    }
+两个视图共享相同骨架（[src/ui/WeChatBrowserView.ts](src/ui/WeChatBrowserView.ts) / [src/ui/ToutiaoBrowserView.ts](src/ui/ToutiaoBrowserView.ts)）：
 
-    this.page = await this.browser.newPage();
-    return this.page;
-  }
+```ts
+// 关键 DOM
+this.webview = document.createElement("webview");
+this.webview.setAttribute("src", PLATFORM_HOME);
+this.webview.setAttribute("partition", `persist:spider-media-${platformId}`);
+this.webview.setAttribute("allowpopups", "true");
 
-  async close() {
-    if (this.page) await this.page.close();
-    if (this.browser) await this.browser.close();
-  }
+// 注入入口
+async submitPayload(payload: { title: string; html: string }): Promise<void> {
+  this.pending = payload;
+  await this.runInject(/*navigateIfNeeded*/ true);
+}
 
-  private findChrome(): string {
-    // 跨平台查找 Chrome 路径
-    const paths = {
-      win32: [
-        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-        process.env.LOCALAPPDATA + "\\Google\\Chrome\\Application\\chrome.exe",
-      ],
-      darwin: [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      ],
-      linux: [
-        "/usr/bin/google-chrome",
-        "/usr/bin/chromium-browser",
-      ],
-    };
-    const os = process.platform as keyof typeof paths;
-    for (const p of paths[os] || []) {
-      if (require("fs").existsSync(p)) return p;
-    }
-    throw new Error("未找到 Chrome 浏览器，请先安装 Google Chrome");
-  }
-
-  /**
-   * 恢复 Cookie 会话
-   */
-  async restoreCookies(domain: string, cookies: any[]): Promise<void> {
-    if (!this.page) throw new Error("浏览器未启动");
-    await this.page.setCookie(...cookies);
-  }
-
-  /**
-   * 获取当前 Cookie (用于持久化)
-   */
-  async getCookies(): Promise<any[]> {
-    if (!this.page) throw new Error("浏览器未启动");
-    return this.page.cookies();
-  }
+// 实际执行
+private async runInject(navigateIfNeeded: boolean) {
+  // 1. 等待 dom-ready
+  // 2. 当前 URL 不在编辑页则导航
+  // 3. webview.executeJavaScript(buildInjectionCode(title, html), true)
+  // 4. 解析返回 { ok, msg } 写入状态栏 + Notice
 }
 ```
 
-#### 3.7.2 WeChatAutomator
+工具栏按钮：`首页` / `新建图文`（公众号）或 `发布图文`（头条号）/ `注入正文` / `刷新` / `DevTools`。
 
-```typescript
-// src/platforms/wechat/WeChatAutomator.ts
+#### 3.7.3 微信公众号注入策略
 
-export class WeChatAutomator {
-  private browser = new BrowserAutomator();
+`buildInjectionCode()` 在 webview 主世界执行（同源 iframe 也可访问）：
 
-  async publish(
-    html: string,
-    title: string,
-    credentials: Credentials,
-  ): Promise<PublishResult> {
-    const page = await this.browser.launch({ headless: false });
+1. **找 JsApi**：递归 `window.frames` 找到 `__MP_Editor_JSAPI__.invoke`
+2. **等编辑器就绪**：轮询 `mp_editor_get_isready` 直到 `{ isReady, isNew }`
+3. **写正文**：`mp_editor_set_content({ content: html })` —— 公众号官方 API
+4. **写标题**：
+   - 公众号没有公开的 `set_title` JsApi
+   - 真实标题输入位于 `.title-editor__input .ProseMirror[contenteditable=true]`（非隐藏的 `<textarea id="title">`）
+   - 20s 轮询 + `execCommand("delete")` 清空 trailingBreak + `execCommand("insertText")` 写入
+5. **写作者**：从 `.weui-desktop-account__nickname` 等读账号名，写入 `#author` input；React 受控 input 用 native value setter
 
-    try {
-      // 1. 登录
-      await page.goto("https://mp.weixin.qq.com/", {
-        waitUntil: "networkidle2",
-      });
+#### 3.7.4 头条号注入策略
 
-      if (credentials.type === "cookie") {
-        await this.browser.restoreCookies(".weixin.qq.com", credentials.data as any);
-        await page.reload();
-      } else {
-        // 等待用户扫码
-        await page.waitForSelector(".weui-desktop-account__info", {
-          timeout: 120000,
-        });
-      }
+1. **标题**：扫 `textarea/input[placeholder*="标题"]` + `.title-area`，`execCommand("insertText")` 走真实输入路径（兼容 Vue v-model / React onChange）
+2. **正文**：找 `.ProseMirror[contenteditable='true']` → 选中并 `execCommand("delete")` 清空 → 构造 `ClipboardEvent('paste')` 携 `text/html` 派发。ProseMirror/tiptap 自带 paste handler 会按 schema 解析 HTML 并维护 doc state，比直接 `innerHTML` 稳定
+3. **innerHTML 兜底**：如果 paste handler 没触发（DOM 改版），降级写 `innerHTML` + `InputEvent`
 
-      // 2. 导航到新建图文
-      await page.goto(
-        "https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1",
-        { waitUntil: "networkidle2" },
-      );
+任何阶段失败都通过返回值带出 `tag/value` 诊断信息，便于贴日志定位。
 
-      // 3. 填写标题
-      await page.waitForSelector("#title", { timeout: 10000 });
-      await page.type("#title", title);
+#### 3.7.5 与 PlatformAdapter 的关系
 
-      // 4. 填写内容 (通过剪贴板粘贴)
-      // 微信公众号编辑器使用 UEditor, 内容在 iframe 中
-      const editorFrame = page.frameLocator("#ueditor_0");
-      const editorBody = editorFrame.locator("body");
+`WeChatAdapter.publish()` / `ToutiaoAdapter.publish()` 在 `PlatformAdapter` 契约中只返回 `{ success: false, stage: "fallback", message: "请使用嵌入式..." }` 占位。`PlatformEditorView.publish()` 按平台 id 路由到 `openWeChatBrowser()` / `openToutiaoBrowser()`：
 
-      // 写入 HTML (逐行设置 innerHTML)
-      await editorBody.evaluate((el, content) => {
-        el.innerHTML = content;
-      }, html);
+```ts
+const platformId = adapter.meta.id;
+const hasNativeTitleInput = platformId === "wechat" || platformId === "toutiao";
+// 平台有独立标题输入框 → 正文不前置 H1（避免重复标题）
+const md = hasNativeTitleInput ? this.currentMarkdown : this.buildMarkdownWithTitle();
+const html = await adapter.format(md, template, this.plugin.settings.tweaks);
 
-      // 5. 等待用户审查并手动发布
-      // 浏览器保持打开，用户可以看到完整操作界面
-
-      return {
-        success: true,
-        stage: "fill",
-        message: "内容已填充到公众号编辑器，请审查后手动发布",
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        stage: "login",
-        message: `自动化失败: ${error.message}`,
-      };
-    }
-  }
+if (platformId === "wechat") {
+  const view = await this.plugin.openWeChatBrowser();
+  await view.submitPayload({ title: this.currentTitle, html });
+  return;
 }
+if (platformId === "toutiao") { /* ... */ return; }
+// 其他平台走 adapter.publish()（占位）
 ```
 
-### 3.8 UI 层 (PlatformEditorView)
+### 3.8 UI 层
 
-#### 3.8.1 视图注册与激活
+Spider Media 注册三个 ItemView：
 
-```typescript
-// src/views/PlatformEditorView.ts
+| 视图 | View Type 常量 | 入口 | 职责 |
+| --- | --- | --- | --- |
+| `PlatformEditorView` | `VIEW_TYPE_SPIDER_MEDIA` | Ribbon / 命令「打开自媒体发布编辑器」 | 选择当前笔记 → 选平台 / 模板 → 实时预览 → 触发发布 |
+| `WeChatBrowserView` | `VIEW_TYPE_WECHAT_BROWSER` | 命令「打开嵌入式微信公众号浏览器」 | 嵌入 `mp.weixin.qq.com`，承载注入脚本 |
+| `ToutiaoBrowserView` | `VIEW_TYPE_TOUTIAO_BROWSER` | 命令「打开嵌入式头条号浏览器」 | 嵌入 `mp.toutiao.com`，承载注入脚本 |
 
-export const VIEW_TYPE_MEDIA_PUBLISHER = "media-publisher-view";
-
-export class PlatformEditorView extends ItemView {
-  private platforms: Map<string, PlatformAdapter>;
-  private activePlatform: PlatformAdapter;
-  private currentFile: TFile | null;
-
-  constructor(leaf: WorkspaceLeaf, platforms: Map<string, PlatformAdapter>) {
-    super(leaf);
-    this.platforms = platforms;
-    this.activePlatform = platforms.get("wechat")!;
-  }
-
-  getViewType(): string {
-    return VIEW_TYPE_MEDIA_PUBLISHER;
-  }
-
-  getDisplayText(): string {
-    return "自媒体发布";
-  }
-
-  getIcon(): string {
-    return "message-square";
-  }
-
-  async onOpen() {
-    const container = this.containerEl.children[1];
-    container.empty();
-    container.addClass("media-publisher-view");
-
-    // 使用 Obsidian 内置的 DOM API 构建 UI
-    this.buildUI(container);
-  }
-
-  private buildUI(container: HTMLElement) {
-    // 三栏布局: 编辑器 | 预览 | 设置
-    // Obsidian 环境下不使用 React/JSX
-    // 而是使用 Obsidian 的 DOM 辅助方法
-    container.createDiv({ cls: "mp-layout" }, (layout) => {
-      // 顶部工具栏
-      layout.createDiv({ cls: "mp-toolbar" }, (toolbar) => {
-        this.buildToolbar(toolbar);
-      });
-
-      // 主体三栏
-      layout.createDiv({ cls: "mp-main" }, (main) => {
-        main.createDiv({ cls: "mp-editor-pane" }, (pane) => {
-          this.buildEditorPane(pane);
-        });
-        main.createDiv({ cls: "mp-preview-pane" }, (pane) => {
-          this.buildPreviewPane(pane);
-        });
-        main.createDiv({ cls: "mp-settings-pane" }, (pane) => {
-          this.buildSettingsPane(pane);
-        });
-      });
-
-      // 底部操作栏
-      layout.createDiv({ cls: "mp-footer" }, (footer) => {
-        this.buildFooter(footer);
-      });
-    });
-  }
-}
-```
-
-#### 3.8.2 UI 组件树
+#### 3.8.1 PlatformEditorView 布局
 
 ```
-PlatformEditorView
-├── .mp-toolbar
-│   ├── 平台选择器 (<select> 公众号/头条号)
-│   ├── 模板选择器 (<select>)
-│   └── 操作按钮 [刷新预览]
+PlatformEditorView (containerEl.children[1])
+├── .spider-media-toolbar
+│   ├── 文件选择 [当前活动笔记 ▼]
+│   ├── 平台选择 [微信公众号 ▼ / 头条号 ▼]
+│   ├── 模板选择 [<根据 platform 动态加载> ▼]
+│   └── 按钮 [刷新预览] [复制 HTML] [同步到平台]
 │
-├── .mp-main
-│   ├── .mp-editor-pane (左侧)
-│   │   └── <textarea> 当前笔记的 MD 内容 (可编辑)
-│   │
-│   ├── .mp-preview-pane (中间)
-│   │   └── <iframe> 实时 HTML 预览 (手机框)
-│   │
-│   └── .mp-settings-pane (右侧)
-│       ├── 字号滑块
-│       ├── 行高滑块
-│       ├── 段落间距
-│       ├── 首行缩进 toggle
-│       ├── 页面留白
-│       ├── 字间距
-│       ├── 图片圆角
-│       └── 主题色选择器
+├── .spider-media-preview
+│   └── 容器内直接 innerHTML 渲染 PostProcessor 产物（手机宽度限制 + 滚动）
 │
-└── .mp-footer
-    ├── 字数统计
-    ├── [同步到公众号] 按钮 (主操作)
-    ├── [复制 HTML] 按钮
-    └── [重置] 按钮
+└── .spider-media-footer
+    └── 状态行（字数 / 上次发布时间 / 错误提示）
 ```
+
+设计要点：
+- 编辑能力依然在 Obsidian 原生编辑器中完成，本视图**只读取当前活动笔记**做发布预览，避免重复造编辑器
+- 预览采用 debounce 350ms 触发 `format()`，且复用 `MarkdownParser` 缓存
+- 「同步到平台」按钮按 `platformId` 路由：`wechat` → `openWeChatBrowser()`，`toutiao` → `openToutiaoBrowser()`，其它平台走 `adapter.publish()`（目前只占位）
+
+#### 3.8.2 *BrowserView 布局
+
+```
+WeChatBrowserView / ToutiaoBrowserView
+├── .spider-media-browser-toolbar
+│   └── [首页] [新建图文/发布图文] [注入正文] [刷新] [DevTools]
+├── <webview partition="persist:spider-media-<id>"> (flex: 1)
+└── .spider-media-browser-status
+    └── 实时状态文本（注入进度 / 错误 / 上次结果）
+```
+
+视图复用：每种 BrowserView 只允许同时一个 leaf；`openEmbeddedBrowser()` 优先复用现有 leaf，否则在 rootSplit（主编辑区）新建 tab。
 
 ### 3.9 设置与持久化
 
+设置形态详见 [src/settings/types.ts](src/settings/types.ts) 和 [src/settings/SettingsTab.ts](src/settings/SettingsTab.ts)。
+
 ```typescript
-// src/settings/SettingsTab.ts
-
-interface PluginSettings {
-  // 平台配置
-  platforms: {
-    wechat: {
-      cookieStore: any[];           // 持久化 Cookie
-      autoLogin: boolean;
-      defaultTemplate: string;
-    };
-    toutiao: {
-      token: string;
-      defaultTemplate: string;
-    };
-  };
-
-  // 全局
-  defaultPlatform: string;
-  imageBed: "none" | "smms" | "aliyun-oss" | "qiniu";
-  imageBedConfig: Record<string, string>;
-
-  // 图床配置 (加密存储)
-  secrets: Record<string, string>;
+export interface SpiderMediaSettings {
+  defaultPlatform: string;            // 默认 wechat
+  tweaks: FormatTweaks;               // 全局排版微调（字号 / 行高 / 段距 / 主题色 ...）
+  wechat:  { defaultTemplateId: string };
+  toutiao: { defaultTemplateId: string };
 }
 
-const DEFAULT_SETTINGS: PluginSettings = {
-  platforms: {
-    wechat: {
-      cookieStore: [],
-      autoLogin: true,
-      defaultTemplate: "wechat-default",
-    },
-    toutiao: {
-      token: "",
-      defaultTemplate: "toutiao-default",
-    },
-  },
+export const DEFAULT_SETTINGS: SpiderMediaSettings = {
   defaultPlatform: "wechat",
-  imageBed: "none",
-  imageBedConfig: {},
-  secrets: {},
+  tweaks: { fontSize: 16, lineHeight: 1.75, themeColor: "#07C160", /* ... */ },
+  wechat:  { defaultTemplateId: "wechat-default"  },
+  toutiao: { defaultTemplateId: "toutiao-default" },
 };
-
-export class SettingsTab extends PluginSettingTab {
-  async display(): Promise<void> {
-    const { containerEl } = this;
-    containerEl.empty();
-
-    // 通用设置
-    new Setting(containerEl)
-      .setName("默认发布平台")
-      .setDesc("打开编辑器时默认选中的平台")
-      .addDropdown((dd) => {
-        dd.addOption("wechat", "微信公众号");
-        dd.addOption("toutiao", "头条号");
-        dd.setValue(this.plugin.settings.defaultPlatform);
-        dd.onChange(async (v) => {
-          this.plugin.settings.defaultPlatform = v;
-          await this.plugin.saveData(this.plugin.settings);
-        });
-      });
-
-    // 图床设置
-    new Setting(containerEl)
-      .setName("图片存储")
-      .setDesc("选择大图上传方式")
-      .addDropdown((dd) => {
-        dd.addOption("none", "本地存储 (Vault)");
-        dd.addOption("smms", "SM.MS 图床");
-        dd.addOption("aliyun-oss", "阿里云 OSS");
-        dd.setValue(this.plugin.settings.imageBed);
-        // ...
-      });
-
-    // 每平台独立配置区域
-    containerEl.createEl("h3", { text: "公众号配置" });
-    // Cookie 管理 / 模板选择 / 等
-  }
-}
 ```
+
+要点：
+- 不存储 Cookie / Token：登录态全部由 `<webview partition="persist:spider-media-<id>">` 持久化，不进 plugin data
+- `loadSettings()` 用浅合并（`{ ...DEFAULT_SETTINGS, ...data, tweaks: { ...DEFAULT_SETTINGS.tweaks, ...data.tweaks } }`）保证缺失字段使用默认值
+- `SettingsTab` 提供：默认平台 / 平台默认模板（公众号 / 头条号各一项 dropdown）/ FormatTweaks 微调控件 / 引导文案（提示用户在嵌入浏览器中扫码登录）
+- 每次 `onChange` → `await this.plugin.saveSettings()`，下次插件加载即生效
 
 ---
 
 ## 4. 扩展新平台
 
-添加一个新平台的完整步骤:
+> 详细脚手架步骤见 [.github/skills/add-platform/SKILL.md](.github/skills/add-platform/SKILL.md)。这里只给出概要。
 
-### 步骤 1: 创建平台目录
+### 4.1 目录结构
 
 ```
-src/platforms/zhihu/
-├── ZhiHuAdapter.ts        # 主适配器
-├── ZhiHuFormatter.ts      # marked renderer 定制
-├── ZhiHuAutomator.ts      # 浏览器自动化
-├── zhihu-templates/       # 模板
-│   ├── default.ts
-│   └── styles.ts
-└── zhihu-config.ts        # 常量
+src/platforms/<platform-id>/
+├── index.ts            // 导出 adapter
+├── adapter.ts          // 实现 PlatformAdapter（meta + format + publish 占位 + getTemplates）
+├── formatter.ts        // marked 扩展（renderer 覆盖）
+└── templates/
+    ├── _base.ts        // 共享结构性 CSS + wrapTemplate 工厂
+    ├── default.ts      // 至少一套主题
+    └── index.ts        // 聚合导出 TEMPLATES 数组
+
+src/ui/<PlatformId>BrowserView.ts   // 嵌入 webview 视图（参考 WeChatBrowserView / ToutiaoBrowserView）
 ```
 
-### 步骤 2: 实现 PlatformAdapter
+### 4.2 必做改动清单
 
-```typescript
-export class ZhiHuAdapter extends PlatformAdapter {
-  meta = {
-    id: "zhihu",
-    name: "知乎",
-    icon: "globe",
-    color: "#0084FF",
-    isDesktopOnly: true,
-  };
+1. **adapter.ts** 实现 `PlatformAdapter`：
+   - `meta`: `{ id, name, icon, color, isDesktopOnly: true }`
+   - `format(md, template, tweaks)` 走 MarkdownParser → MermaidConverter → ImageManager → PostProcessor
+   - `publish(...)` 仅返回 `"请使用嵌入式<平台>浏览器发布"` 占位（真实注入在 *BrowserView 里）
+   - `setNoteDir(dir)` 重建 ImageManager
+2. **formatter.ts** 给出该平台 marked 扩展（参考公众号 / 头条号实现，需要平台特定的 `<li>`/`<pre>` 处理逻辑）
+3. **templates/** 至少一套默认模板，使用 `wrapTemplate(extraCss)` 工厂保证 `{{CONTENT}}` / `{{TWEAK_STYLES}}` 占位符
+4. **<PlatformId>BrowserView.ts** 复制现有 BrowserView 改写：`PARTITION` / 首页 URL / 发布页 URL / `buildInjectionCode()` 内的标题/正文 selector
+5. **main.ts**：
+   - 注册视图 `registerView(VIEW_TYPE_<PLATFORM>_BROWSER, ...)`
+   - 实例化 adapter 加入 `this.platforms`
+   - 添加命令 `open-<platform-id>-embedded-browser` 和 `open<PlatformId>Browser()` 公共方法
+6. **PlatformEditorView.publish()**：增加 `if (platformId === '<id>')` 分支调用对应 BrowserView
+7. **settings/types.ts**：新增 `<platform>` 设置段，更新 `loadSettings` 浅合并
+8. **README.md**：更新支持平台表
 
-  getTemplates() { /* ... */ }
-  async format(md, template, tweaks) { /* ... */ }
-  async publish(html, title, credentials) { /* 知乎特定自动化 */ }
-  async validateCredentials(credentials) { /* ... */ }
-}
-```
+### 4.3 工作量参考
 
-### 步骤 3: 在 main.ts 注册
-
-```typescript
-// main.ts
-this.registerPlatform(new WeChatAdapter());
-this.registerPlatform(new TouTiaoAdapter());
-this.registerPlatform(new ZhiHuAdapter());  // 新平台
-```
-
-### 需要定制的部分
-
-| 组件 | 说明 | 工作量 |
-|------|------|--------|
-| PlatformFormatter | marked renderer 覆盖 (标题/代码/引用样式) | ~50 行 |
-| PlatformAutomator | Puppeteer 脚本 (打开页面、登录、填充内容) | ~150 行 |
-| Templates | 2-3 个样式模板 | ~100 行 CSS |
-| PlatformAdapter | 整合以上组件 | ~30 行 |
-
-**总计**: 添加一个新平台约 **300-400 行代码**。
+| 组件 | 行数 |
+| --- | --- |
+| `formatter.ts` + `templates/` | ~120 行 |
+| `adapter.ts` | ~80 行 |
+| `<PlatformId>BrowserView.ts` | ~250 行（含注入脚本） |
+| `main.ts` / `PlatformEditorView.ts` 改动 | ~30 行 |
+| **合计** | **~480 行** |
 
 ---
 
@@ -1222,19 +964,16 @@ this.registerPlatform(new ZhiHuAdapter());  // 新平台
 | 决策点 | 方案 | 理由 |
 |-------|------|------|
 | **MD 解析引擎** | `marked` 17.x | 最成熟的 MD 解析库，自定义扩展 API 完善 |
-| **样式内联** | `juice` | 专门处理 CSS→内联，WeChat 强依赖 |
-| **Mermaid 渲染** | Obsidian 内置 mermaid + Canvas API | 零外部依赖，obsidian 已加载 mermaid |
-| **Mermaid 备选** | mermaid.ink HTTP API | 无需 Puppeteer，适合轻量使用 |
-| **浏览器自动化** | `puppeteer-core` | 连接已有 Chrome，用户可见过程 |
-| **代码高亮** | `marked-highlight` + Prism 主题 CSS | 轻量，不需要完整 Prism JS |
-| **插件 UI** | Obsidian ItemView + 原生 DOM API | 标准 Obsidian 模式，兼容性最好 |
-| **UI 构建** | Obsidian 原生 `createDiv`/`createEl` | 避免引入 React/Vue 等重型框架 |
-| **设置持久化** | `loadData()` / `saveData()` | Obsidian 内置 API |
-| **Cookie 存储** | `saveData()` (加密) | 安全存储在 Obsidian 配置目录 |
-| **图片处理** | 小图 base64 / 大图上图床 | 平衡体积与兼容性 |
-| **模板引擎** | TypeScript 函数 + 字符串模板 | 类型安全，无需 DSL |
-| **构建工具** | esbuild (Obsidian 社区标准) | 官方推荐，Rollup 备选 |
-| **移动端支持** | `isDesktopOnly: true` | Puppeteer 依赖 Chromium |
+| **样式内联** | `juice` | 专门处理 CSS→内联，公众号编辑器强依赖 |
+| **Mermaid 渲染** | Obsidian 内置 mermaid + Canvas API（SVG → PNG 栅格化） | 零外部依赖；公众号 / 头条号都不允许直插 SVG |
+| **发布通道** | Electron `<webview>` 嵌入 Obsidian + `executeJavaScript` 注入 | 零额外依赖，partition 持久会话，DevTools 直接调试 |
+| **代码高亮** | `marked-highlight`（CSS 内联） | 轻量，不依赖 Prism 运行时 |
+| **插件 UI** | Obsidian ItemView + 原生 DOM API | 标准 Obsidian 模式，不引入 React/Vue |
+| **设置持久化** | `loadData()` / `saveData()` | Obsidian 内置 API，启动时与 DEFAULT_SETTINGS 浅合并 |
+| **图片处理** | 小图 base64（默认 < 100KB） / 大图保留 vault 路径 | 平衡体积与兼容性，未来再接图床 |
+| **模板引擎** | TypeScript 函数 + 字符串模板 + `{{CONTENT}}/{{TWEAK_STYLES}}` 占位符 | 类型安全，无 DSL |
+| **构建工具** | esbuild（manifest.json / styles.css 通过 copy loader 一并产到 `dist/`） | Obsidian 社区标准 |
+| **移动端支持** | `isDesktopOnly: true` | Electron `<webview>` 只在桌面端可用 |
 
 ---
 
@@ -1247,15 +986,6 @@ this.registerPlatform(new ZhiHuAdapter());  // 新平台
 | `marked` | ^17.0.0 | Markdown → HTML 解析 |
 | `marked-highlight` | ^2.0.0 | marked 代码高亮扩展 |
 | `juice` | ^11.0.0 | CSS → 内联样式 |
-| `puppeteer-core` | ^24.0.0 | 浏览器自动化 (连接已有 Chrome) |
-
-可选依赖 (根据图床配置):
-
-| 包 | 用途 |
-|---|------|
-| `ali-oss` | 阿里云 OSS 上传 |
-| `qiniu` | 七牛云上传 |
-| `cos-nodejs-sdk-v5` | 腾讯云 COS 上传 |
 
 ### 开发依赖
 
@@ -1263,17 +993,21 @@ this.registerPlatform(new ZhiHuAdapter());  // 新平台
 |---|------|
 | `obsidian` | Obsidian API 类型定义 |
 | `typescript` | ^5.7 |
-| `esbuild` | 构建打包 |
+| `esbuild` | 构建打包（产物到 `dist/`） |
 | `@types/node` | Node.js 类型 |
+| `builtin-modules` | esbuild external 列表 |
+| `@typescript-eslint/*` + `eslint` | Lint |
 
-### 非依赖 (利用 Obsidian 已提供)
+### 非依赖（利用 Obsidian / Electron 自带）
 
 | 能力 | 来源 |
 |------|------|
-| Mermaid 渲染 | Obsidian 内置 `window.mermaid` |
+| Mermaid 渲染 | Obsidian 全局 `window.mermaid`（再 Canvas 栅格化为 PNG） |
+| 嵌入浏览器 | Electron `<webview>` 标签（Obsidian 默认开启 `webviewTag`） |
+| 持久会话 | `<webview partition="persist:...">`（电场分区，Cookie / localStorage 全持久） |
 | 文件系统 | `app.vault` API |
 | DOM 操作 | Obsidian 内置 `createEl`/`createDiv` |
-| 设置持久化 | `loadData()`/`saveData()` |
+| 设置持久化 | `loadData()` / `saveData()` |
 
 ---
 
@@ -1282,37 +1016,33 @@ this.registerPlatform(new ZhiHuAdapter());  // 新平台
 ```
 ┌─── OBSIDIAN 内部 ──────────────────────────────────────────────────┐
 │                                                                     │
-│  1.  用户在笔记中编辑 MD (含 Mermaid 图、本地图片、代码块)          │
+│  1.  用户在笔记中编辑 MD（含 Mermaid 图、本地图片、代码块）         │
 │                                                                     │
-│  2.  点击 Ribbon "自媒体发布"                                        │
-│      → PlatformEditorView 从右侧滑出                                │
-│      → 自动加载当前活动笔记的 MD 内容                                │
+│  2.  命令面板 / Ribbon → 「打开自媒体发布编辑器」                    │
+│      → PlatformEditorView 加载当前活动笔记                          │
 │                                                                     │
-│  3.  选择平台: [公众号 ▼]                                            │
-│      → 加载对应平台的模板列表                                        │
+│  3.  选择平台 [微信公众号 ▼ / 头条号 ▼] + 模板                      │
+│      → 预览实时刷新（debounce 350ms）                                │
 │                                                                     │
-│  4.  选择模板: [默认精简 ▼]                                          │
-│      → 预览区域实时更新格式化后的手机预览                            │
+│  4.  在「设置 → Spider Media」调整字号 / 行高 / 主题色等             │
 │                                                                     │
-│  5.  调整格式参数 (可选):                                            │
-│      [字号: 16] [行高: 1.8] [缩进: ON] [主题色: #07C160]            │
-│      → 预览实时响应                                                  │
+│  5.  （首次）执行命令「打开嵌入式<平台>浏览器」→ 在 webview 扫码登录 │
+│       → partition 持久化，后续无需重新登录                            │
 │                                                                     │
-│  6.  点击 [同步到公众号]                                              │
-│      → MarkdownParser 解析 MD                                       │
-│      → MermaidConverter 将 mermaid 块转为 PNG 并保存                │
-│      → ImageManager 处理所有图片 (base64/图床)                      │
-│      → PostProcessor 模板包装 + juice 内联样式                      │
-│      → BrowserAutomator 启动 Chrome (或连接已有)                    │
-│      → 打开 mp.weixin.qq.com                                          │
-│      → 恢复 Cookie / 弹出二维码登录                                  │
-│      → 导航到新建图文页面                                             │
-│      → 填充标题 + HTML 内容                                          │
-│      → 浏览器保持打开，等待用户操作                                   │
+│  6.  点击「同步到平台」                                              │
+│      → MarkdownParser 解析 MD                                        │
+│      → MermaidConverter 将 mermaid 块转为 PNG（base64）              │
+│      → ImageManager 处理所有图片                                     │
+│      → PostProcessor 模板包装 + juice 内联样式 + 后处理修复          │
+│      → 平台适配器返回 (title, html)                                  │
+│      → 路由到对应 *BrowserView                                       │
+│      → webview 自动跳到发布页（公众号「新建图文」/ 头条号 graphic/publish）│
+│      → 等编辑器就绪 → 注入正文 / 标题 / 作者                         │
+│      → Notice 提示注入成功                                           │
 │                                                                     │
-│  7.  用户在打开的浏览器中:                                            │
-│      → 审查内容、调整封面/摘要/标签                                   │
-│      → 点击 [保存并群发] / [预览]                                     │
+│  7.  用户在嵌入 webview 中：                                         │
+│      → 审查内容、调整封面 / 摘要 / 标签                              │
+│      → 点击平台原生「发布」按钮                                       │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -1324,10 +1054,10 @@ this.registerPlatform(new ZhiHuAdapter());  // 新平台
 | 项目 | 借鉴点 |
 |------|--------|
 | [mspringjade/wechat-formatter](https://github.com/mspringjade/wechat-formatter) | marked 定制 renderer 方案、72 套模板设计思路、CSS 内联策略 |
-| [LinusLing/WeChatMediaPlatformAutomation](https://github.com/LinusLing/WeChatMediaPlatformAutomation) | Puppeteer 控制公众号后台的实操经验、登录流程、iframe 处理 |
+| [LinusLing/WeChatMediaPlatformAutomation](https://github.com/LinusLing/WeChatMediaPlatformAutomation) | 公众号后台登录流程、iframe 结构、编辑器 DOM 探查经验 |
 | [obsidianmd/obsidian-sample-plugin](https://github.com/obsidianmd/obsidian-sample-plugin) | Obsidian 插件标准项目结构、manifest.json、构建配置 |
 | [weppos/obsidian-mermaid-view](https://github.com/weppos/obsidian-mermaid-view) | Obsidian 中 Mermaid 渲染与导出的实现参考 |
 | [wis-graph/obsidian-modern-mermaid](https://github.com/wis-graph/obsidian-modern-mermaid) | Mermaid 在 Obsidian 中的代码块处理器注册 |
 | [TheTrustedAdvisor/mermaid-maestro](https://github.com/thetrustedadvisor/mermaid-maestro) | Mermaid → PNG/SVG 导出的 API 使用方式 |
 | [vigorX777/wechat-article-formatter](https://github.com/vigorX777/wechat-article-formatter) | Chrome DevTools Protocol 发布流程、模板分离设计 |
-| [mermaid.ink](https://github.com/jihchi/mermaid.ink) | Mermaid → 图片的服务端渲染参考 (Puppeteer) |
+| [mermaid.ink](https://github.com/jihchi/mermaid.ink) | Mermaid → 图片的服务端渲染参考 |

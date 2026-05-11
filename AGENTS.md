@@ -16,15 +16,15 @@ Obsidian 桌面插件：将 Markdown 笔记一键发布到微信公众号、头�
 | Lint | `npm run lint` |
 | 版本号更新 | `npm version <patch\|minor\|major>` |
 
-构建配置见 [esbuild.config.mjs](esbuild.config.mjs)：入口 `src/main.ts` → 产物 `main.js`，CJS / ES2022。
+构建配置见 [esbuild.config.mjs](esbuild.config.mjs)：入口 `src/main.ts` → 产物 `dist/main.js`，CJS / ES2022。每次构建同时会把 `manifest.json` 与 `styles.css` 复制到 `dist/`。
 
 ## 必读约束
 
-- **Obsidian 插件目标**：通过 `obsidian` API 工作；`obsidian`、`electron`、`@codemirror/*`、Node builtins、`puppeteer-core` 全部声明为 esbuild external（见 [esbuild.config.mjs](esbuild.config.mjs#L17-L33)），不要打包进 `main.js`。
+- **Obsidian 插件目标**：通过 `obsidian` API 工作；`obsidian`、`electron`、`@codemirror/*`、Node builtins 都声明为 esbuild external（见 [esbuild.config.mjs](esbuild.config.mjs#L17-L33)），不要打包进 `dist/main.js`。
 - **桌面端专用**：[manifest.json](manifest.json) 中 `isDesktopOnly: true`。不要新增依赖移动端 API 的代码。
-- **puppeteer-core 沙箱限制**：在 Obsidian 内不可直接运行；按 [esbuild.config.mjs](esbuild.config.mjs#L31) 注释，需延迟加载并实现「失败兜底到剪贴板」路径。
-- **不入库的产物**：`node_modules/`、`main.js`、`main.js.map`。请勿提交。
-- **发布制品**：仅 `main.js`、`manifest.json`、`styles.css` 三个文件。
+- **发布路径**：微信 / 头条号均走 Electron `<webview>` 内嵌到 Obsidian（见 `src/ui/WeChatBrowserView.ts` / `ToutiaoBrowserView.ts`）。不再依赖 puppeteer / 外部 Chrome。
+- **不入库的产物**：`node_modules/`、`dist/`。历史根目录的 `main.js`/`main.js.map`/`styles.css` 也仍保留在 .gitignore 中。
+- **发布制品**：`dist/main.js`、`dist/manifest.json`、`dist/styles.css` 三个文件。
 
 ## TypeScript 规范（[tsconfig.json](tsconfig.json)）
 

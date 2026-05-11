@@ -1,5 +1,6 @@
 import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
-import type SpiderMediaPlugin from "@/main";
+
+import type SpiderMediaPlugin from "../main";
 
 export const VIEW_TYPE_TOUTIAO_BROWSER = "spider-media-toutiao-browser";
 
@@ -39,9 +40,8 @@ export class ToutiaoBrowserView extends ItemView {
 	private pending: InjectionPayload | null = null;
 	private isReady = false;
 
-	constructor(leaf: WorkspaceLeaf, private plugin: SpiderMediaPlugin) {
+  constructor(leaf: WorkspaceLeaf, _plugin: SpiderMediaPlugin) {
 		super(leaf);
-		void plugin;
 	}
 
 	getViewType(): string {

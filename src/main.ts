@@ -99,12 +99,6 @@ export default class SpiderMediaPlugin extends Plugin {
 			context: { vault: this.app.vault },
 			noteDir: "",
 			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
-			automator: () => ({
-				browserURL: this.settings.wechat.browserURL || undefined,
-				executablePath: this.settings.wechat.executablePath || undefined,
-				puppeteerModulePath: this.settings.wechat.puppeteerModulePath || undefined,
-				timeoutMs: this.settings.wechat.timeoutMs,
-			}),
 		});
 		this.platforms.set(wechat.meta.id, wechat);
 
@@ -112,7 +106,6 @@ export default class SpiderMediaPlugin extends Plugin {
 			context: { vault: this.app.vault },
 			noteDir: "",
 			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
-			automator: () => ({ timeoutMs: this.settings.toutiao.timeoutMs }),
 		});
 		this.platforms.set(toutiao.meta.id, toutiao);
 	}

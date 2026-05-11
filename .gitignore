@@ -1,7 +1,5 @@
 node_modules/
-main.js
-main.js.map
-styles.css
+dist/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db

@@ -89,33 +89,22 @@
 
 每套模板都通过 [juice](https://github.com/Automattic/juice) 把 CSS 内联到 `style=""`，发布前再叠加排版参数与可选的标题装饰 / 代码主题。最终复制到公众号编辑器的 HTML 已经不依赖 class，可被微信编辑器原样保留。
 
-### 微信公众号
+### 微信公众号 / 头条号
 
-公众号自动化采用「**插件本地启动 Chrome → 用户扫码登录 → 自动跳转新建图文页面 → 调用官方 [MP_Editor JsApi](https://developers.weixin.qq.com/doc/offiaccount/MP_Editor_JsApi/mp_editor_jsapi.html) 注入正文**」的流程。任意环节失败都会自动把 HTML 复制到剪贴板兜底。
+两者均通过 **Obsidian 内嵌 Electron `<webview>`** 完成发布，无需外部 Chrome / puppeteer：
 
-| 字段 | 是否必填 | 示例 / 说明 |
-| --- | --- | --- |
-| **Chrome 远程调试 URL** | 二选一 | `http://127.0.0.1:9222` — 适合手动启动 `chrome.exe --remote-debugging-port=9222 --user-data-dir=D:/chrome-mp` 后复用，免重复登录 |
-| **Chrome 可执行文件路径** | 二选一 | `C:/Program Files/Google/Chrome/Application/chrome.exe` — 由 puppeteer-core 启动新实例 |
-| **puppeteer-core 模块绝对路径** | **必填** | Obsidian 沙箱不能解析 bare 模块名，必须填 `puppeteer-core` 包目录的绝对路径，例如 `C:/Projects/spider-media-test/.obsidian/plugins/spider-media/node_modules/puppeteer-core`。留空则不启用自动化，发布时仅复制 HTML 到剪贴板。 |
-| **自动化超时 (ms)** | 否 | 默认 30000；扫码等待固定 180s，编辑器加载固定 60s，无需此项调整 |
+1. 在命令面板执行「打开嵌入式微信公众号浏览器」或「打开嵌入式头条号浏览器」
+2. 在 webview 中扫码 / 账号密码登录（partition 持久会话，登录一次即可长期复用）
+3. 切回笔记，在发布视图选择目标平台 → 点「同步到平台」
+4. 插件自动跳转到对应平台的发布页面，注入标题 / 正文 / 作者
+5. 在平台后台审查后手动点「发布」
 
-#### 安装 puppeteer-core
+注入路径：
 
-任意目录执行（不会污染 Obsidian / 仓库）：
+- **微信公众号**：调用官方 [MP_Editor JsApi](https://developers.weixin.qq.com/doc/offiaccount/MP_Editor_JsApi/mp_editor_jsapi.html) 写正文；标题与作者通过 ProseMirror contenteditable / 隐藏 textarea 注入
+- **头条号**：构造 `ClipboardEvent('paste')` 携 `text/html` 投到 ProseMirror 编辑器，由其自带 paste handler 解析
 
-```bash
-mkdir -p C:/Projects/spider-media-test/.obsidian/plugins/spider-media
-cd C:/Projects/spider-media-test/.obsidian/plugins/spider-media
-npm init -y
-npm install puppeteer-core
-```
-
-然后把 `node_modules/puppeteer-core` 的绝对路径填到上面的设置项。
-
-#### 失败兜底
-
-- 未配置 puppeteer-core 路径 / 加载失败 / Chrome 启动失败 / 扫码超时 / 编辑器 API 不可用 → 自动复制最终 HTML 到剪贴板，并弹 `Notice` 提示原因。手动粘贴到公众号编辑器同样可用（保留所有内联样式）。
+如平台 DOM 改版导致注入失败，请打开 webview DevTools（工具栏「DevTools」按钮）把 console 中 `[spider-media]` 日志反馈给开发者。
 
 ## 支持平台
 
@@ -143,10 +132,7 @@ obsidian-media-publisher/
 │   │   ├── base/                # 抽象基类
 │   │   ├── wechat/              # 公众号
 │   │   └── toutiao/             # 头条号
-│   ├── formatters/              # 格式化工具
-│   ├── templates/               # 样式模板
-│   ├── automator/               # 浏览器自动化
-│   ├── ui/                      # 编辑器 UI
+│   ├── ui/                      # 编辑器 UI + 嵌入 webview 视图
 │   └── settings/                # 配置页
 ├── manifest.json
 ├── package.json
@@ -160,7 +146,7 @@ obsidian-media-publisher/
 - **运行时**: Obsidian API (Electron/Chromium)
 - **MD 解析**: marked 17
 - **样式内联**: juice
-- **自动化**: puppeteer-core
+- **发布**: Electron `<webview>` (内置于 Obsidian)
 - **构建**: esbuild
 
 ## 开发
