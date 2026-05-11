@@ -47,7 +47,9 @@ export class WeChatFormatter {
 							body = allParas.join("<br/><br/>");
 						}
 						const prefix = task ? `${checked ? "☑" : "☐"} ` : "";
-						return `<li>${prefix}${body}</li>`;
+						// task 项隐藏 list 项标记（圆点/数字），只保留 ☐/☑ 与文本，对齐 Obsidian 视觉。
+						const liStyle = task ? ` style="list-style:none;margin-left:-1.2em;"` : "";
+						return `<li${liStyle}>${prefix}${body}</li>`;
 					},
 					list({ ordered, start, items }) {
 						// 紧凑输出，li 之间不留 \n，避免 ProseMirror 把空白文本节点 normalize 成空 li。

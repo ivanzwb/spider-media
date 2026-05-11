@@ -183,6 +183,18 @@ export class PlatformEditorView extends ItemView {
 		await this.refreshPreview();
 	}
 
+	/**
+	 * 构造发送给 adapter 的 markdown：在首行注入 `# 标题`（若 body 未以 H1 起头）。
+	 * 这样预览和公众号正文里都能看到标题；公众号编辑器的标题栏由 JsApi 单独填入。
+	 */
+	private buildMarkdownWithTitle(): string {
+		const body = this.currentMarkdown ?? "";
+		const title = (this.currentTitle ?? "").trim();
+		if (!title) return body;
+		if (/^\s*#\s+/.test(body)) return body; // body 已有 H1，避免重复
+		return `# ${title}\n\n${body}`;
+	}
+
 	private async refreshPreview(): Promise<void> {
 		if (!this.currentMarkdown) {
 			this.previewEl.empty();
@@ -192,7 +204,7 @@ export class PlatformEditorView extends ItemView {
 			const adapter = this.getActiveAdapter();
 			const template = this.getActiveTemplate(adapter);
 			const html = await adapter.format(
-				this.currentMarkdown,
+				this.buildMarkdownWithTitle(),
 				template,
 				this.plugin.settings.tweaks,
 			);
@@ -214,7 +226,7 @@ export class PlatformEditorView extends ItemView {
 			const adapter = this.getActiveAdapter();
 			const template = this.getActiveTemplate(adapter);
 			const html = await adapter.format(
-				this.currentMarkdown,
+				this.buildMarkdownWithTitle(),
 				template,
 				this.plugin.settings.tweaks,
 			);
@@ -234,11 +246,22 @@ export class PlatformEditorView extends ItemView {
 		try {
 			const adapter = this.getActiveAdapter();
 			const template = this.getActiveTemplate(adapter);
+			// 微信编辑器有独立标题输入框，正文不应再带 H1（否则会出现重复标题）。
+			const isWechat = adapter.meta.id === "wechat";
+			const md = isWechat ? (this.currentMarkdown ?? "") : this.buildMarkdownWithTitle();
 			const html = await adapter.format(
-				this.currentMarkdown,
+				md,
 				template,
 				this.plugin.settings.tweaks,
 			);
+			// 微信走 Obsidian 内嵌 webview，免外部 Chrome
+			if (isWechat) {
+				this.setStatus("打开内嵌浏览器…");
+				const view = await this.plugin.openWeChatBrowser();
+				await view.submitPayload({ title: this.currentTitle, html });
+				this.setStatus("已切到嵌入浏览器执行注入");
+				return;
+			}
 			this.setStatus("正在发布…");
 			const result = await adapter.publish(html, this.currentTitle, {
 				type: "manual",

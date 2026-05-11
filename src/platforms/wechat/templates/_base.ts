@@ -24,8 +24,8 @@ export const wechatBaseStyles = `
 .mp-article h3 { font-size: 17px; }
 .mp-article h4 { font-size: 16px; }
 .mp-article p { text-align: justify; }
-.mp-article ul, .mp-article ol { padding-left: 1.6em; }
-.mp-article li { margin: 0.3em 0; }
+.mp-article ul, .mp-article ol { padding-left: 1.6em; text-align: left; }
+.mp-article li { margin: 0.3em 0; text-align: left; }
 .mp-article hr { border: none; border-top: 1px solid #ddd; margin: 20px 0; }
 .mp-article table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.95em; }
 .mp-article th, .mp-article td { border: 1px solid #ddd; padding: 6px 10px; }

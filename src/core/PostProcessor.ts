@@ -36,19 +36,25 @@ export class PostProcessor {
 
 	/**
 	 * 去掉首尾多余空白与空块。
-	 * 微信 ProseMirror 在 set_content 时，如果首个块是 <section>...</section>，
-	 * 且 section 内开头有 <style> 或纯空白文本节点，会自动补一个空 <p>，
-	 * 造成正文开头多一行空白。这里直接清掉。
+	 *
+	 * juice 已把所有 CSS 内联到元素的 style 属性上，<style> 标签留下来反而会让
+	 * 微信 ProseMirror 在 set_content 时给 section 的第一个非块子节点前补空 <p>，
+	 * 造成正文开头多一行空白。因此 trim 阶段统一删除 <style> 标签 + 清首尾空段落。
 	 */
 	private trimLeading(html: string): string {
 		let s = html.trim();
-		// 1) 把 <section> 内紧跟开头的 <style>...</style> 后续空白去掉
-		s = s.replace(/(<section[^>]*>)\s*(<style[\s\S]*?<\/style>)\s*/i, "$1$2");
-		// 2) 移除 section 开头的空白文本节点 / 空段落
-		s = s.replace(/(<section[^>]*>(?:<style[\s\S]*?<\/style>)?)\s*(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+/i, "$1");
-		// 3) 同样处理结尾空段落
+		// 1) 删除所有 <style>...</style>（CSS 已 inline）
+		s = s.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+		// 2) 紧贴 <section> 内的纯空白
+		s = s.replace(/(<section\b[^>]*>)\s+/i, "$1");
+		s = s.replace(/\s+(<\/section>)/i, "$1");
+		// 3) section 开头/结尾的空段落
+		s = s.replace(/(<section\b[^>]*>)(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+/i, "$1");
 		s = s.replace(/(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+(<\/section>)/i, "$1");
-		return s;
+		// 4) 整体首尾空段
+		s = s.replace(/^(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+/i, "");
+		s = s.replace(/(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+$/i, "");
+		return s.trim();
 	}
 
 	/**
