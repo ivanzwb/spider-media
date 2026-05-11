@@ -121,8 +121,8 @@ npm install puppeteer-core
 
 | 平台 | 状态 | 说明 |
 |------|------|------|
-| 微信公众号 | ✅ 已实现 | MP_Editor JsApi 注入正文，自动跳转新建图文 |
-| 头条号 | 🔜 规划中 | 支持图文 |
+| 微信公众号 | ✅ 已实现 | 内嵌 webview + MP_Editor JsApi 注入正文，自动跳转新建图文 |
+| 头条号 | 🚧 实验性 | 内嵌 webview + ProseMirror paste 注入正文 / 标题（接口未稳定，DOM 可能变更） |
 | 知乎 | 📝 待定 | - |
 | 小红书 | 📝 待定 | - |
 | CSDN | 📝 待定 | - |

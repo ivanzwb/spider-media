@@ -8,11 +8,17 @@ export interface WeChatPlatformSettings {
 	timeoutMs: number;
 }
 
+export interface ToutiaoPlatformSettings {
+	defaultTemplateId: string;
+	timeoutMs: number;
+}
+
 export interface SpiderMediaSettings {
 	defaultPlatform: string;
 	imageInlineThresholdKB: number;
 	tweaks: FormatTweaks;
 	wechat: WeChatPlatformSettings;
+	toutiao: ToutiaoPlatformSettings;
 }
 
 export const DEFAULT_SETTINGS: SpiderMediaSettings = {
@@ -24,6 +30,10 @@ export const DEFAULT_SETTINGS: SpiderMediaSettings = {
 		browserURL: "",
 		executablePath: "",
 		puppeteerModulePath: "",
+		timeoutMs: 30_000,
+	},
+	toutiao: {
+		defaultTemplateId: "toutiao-default",
 		timeoutMs: 30_000,
 	},
 };
