@@ -1,0 +1,38 @@
+{
+  "name": "spider-media",
+  "version": "0.1.0",
+  "description": "Obsidian plugin for publishing markdown articles to WeChat, Toutiao and other media platforms",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint src/",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "wechat",
+    "publish",
+    "markdown",
+    "自媒体"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "marked": "^17.0.0",
+    "marked-highlight": "^2.0.0",
+    "juice": "^11.0.0",
+    "puppeteer-core": "^24.0.0"
+  },
+  "devDependencies": {
+    "obsidian": "latest",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+main.js
+main.js.map
+styles.css
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

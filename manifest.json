@@ -1,0 +1,11 @@
+{
+  "id": "spider-media",
+  "name": "Spider Media",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "一键发布 Markdown 文章到微信公众号、头条号等自媒体平台。支持 Mermaid 转图片、代码高亮、本地图片处理、样式模板。",
+  "author": "Spider Media",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": true
+}
