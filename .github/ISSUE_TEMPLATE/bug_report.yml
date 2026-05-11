@@ -1,0 +1,72 @@
+name: 🐞 Bug report
+description: 报告插件 bug / DOM 注入失败 / 渲染异常
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量提供完整信息，便于复现。
+        如果是公众号 / 头条号 DOM 改版导致的注入失败，请在嵌入浏览器视图工具栏点 **DevTools**，把 console 里 `[spider-media]` 日志一起贴上来。
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Spider Media 版本
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: obsidian-version
+    attributes:
+      label: Obsidian 版本
+      placeholder: "1.5.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 触发平台
+      options:
+        - 微信公众号
+        - 头条号
+        - 编辑器视图（PlatformEditorView）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 ...
+        2. 点击 ...
+        3. 看到 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果 / 错误日志
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他信息（截图 / 笔记片段 / 配置等）

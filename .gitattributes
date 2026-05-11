@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+# 让 GitHub Linguist 不把这些目录算进语言统计
+ARCHITECTURE.md linguist-documentation
+README.md linguist-documentation
+DONATE.md linguist-documentation
+.github/** linguist-vendored
+dist/** linguist-generated
+versions.json linguist-generated

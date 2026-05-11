@@ -1,0 +1,3 @@
+# GitHub 自动 Sponsor 按钮指向项目内的 DONATE.md
+# 真正的二维码图片放在 assets/donate/ 下
+custom: ["https://github.com/ivanzwb/spider-media/blob/main/DONATE.md"]

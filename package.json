@@ -1,7 +1,7 @@
 {
   "name": "spider-media",
   "version": "0.1.0",
-  "description": "Obsidian plugin for publishing markdown articles to WeChat, Toutiao and other media platforms",
+  "description": "Obsidian plugin that publishes Markdown notes to WeChat Official Account (微信公众号), Toutiao (头条号) and other Chinese self-media platforms with one click. Renders Mermaid to PNG, inlines CSS, and injects content via embedded Electron webview — no external Chrome / puppeteer required.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -11,14 +11,36 @@
   },
   "keywords": [
     "obsidian",
-    "plugin",
+    "obsidian-plugin",
+    "obsidian-md",
     "wechat",
-    "publish",
+    "wechat-official-account",
+    "weixin",
+    "toutiao",
+    "self-media",
+    "自媒体",
+    "微信公众号",
+    "头条号",
     "markdown",
-    "自媒体"
+    "markdown-to-html",
+    "publish",
+    "mermaid",
+    "juice",
+    "electron",
+    "webview",
+    "prosemirror",
+    "chinese"
   ],
-  "author": "",
+  "author": "ivanzwb",
   "license": "MIT",
+  "homepage": "https://github.com/ivanzwb/spider-media#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivanzwb/spider-media.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ivanzwb/spider-media/issues"
+  },
   "dependencies": {
     "juice": "^11.0.0",
     "marked": "^17.0.0",

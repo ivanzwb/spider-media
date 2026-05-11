@@ -1,6 +1,41 @@
 # Spider Media — Obsidian 自媒体发布插件
 
 > 把 Obsidian 笔记一键发布到微信公众号、头条号等自媒体平台
+>
+> *An Obsidian plugin for one-click publishing of Markdown notes to WeChat Official Account (公众号), Toutiao (头条号) and other Chinese self-media platforms.*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/ivanzwb/spider-media?style=social)](https://github.com/ivanzwb/spider-media/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/ivanzwb/spider-media?include_prereleases)](https://github.com/ivanzwb/spider-media/releases)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.5%2B-7c3aed?logo=obsidian)](https://obsidian.md)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
+**关键词 / Keywords**：Obsidian 公众号插件 · Markdown 转公众号 · Obsidian 头条号 · 自媒体发布 · WeChat publisher · Mermaid to PNG · juice CSS inliner · ProseMirror paste injection
+
+## English Overview
+
+Spider Media is a desktop-only Obsidian plugin that helps Chinese-speaking authors publish their Markdown notes to **WeChat Official Account (微信公众号)**, **Toutiao (头条号)** and similar self-media platforms.
+
+It does **not** bypass any platform login or auto-click the final "Publish" button. The publishing flow is:
+
+1. The plugin renders the active note to platform-ready HTML (Mermaid → PNG, juice CSS inlining, template wrapping).
+2. The plugin opens an embedded Electron `<webview>` pointing at the platform's official editor (`mp.weixin.qq.com` / `mp.toutiao.com`).
+3. The user signs in inside the webview (QR code scan) — the session is persisted via `partition="persist:..."` and stays local.
+4. The plugin injects the rendered HTML into the platform's editor via `webview.executeJavaScript`.
+5. **The user manually reviews and presses the platform's native "Publish" button.** The plugin never auto-publishes and never uploads vault content to any third-party server.
+
+No external Chrome / puppeteer is required. No telemetry. MIT-licensed.
+
+### Install (Manual)
+
+1. Download `main.js`, `manifest.json`, `styles.css` from [Releases](https://github.com/ivanzwb/spider-media/releases).
+2. Copy them to `<your-vault>/.obsidian/plugins/spider-media/`.
+3. Reload Obsidian → Settings → Community plugins → enable **Spider Media**.
+
+### Limitations
+
+- Desktop only (`isDesktopOnly: true`) — relies on Electron `<webview>`.
+- Tested against current WeChat / Toutiao editor DOM; platform redesigns may temporarily break injection (please open an issue with DevTools logs).
 
 ## 痛点
 
@@ -18,9 +53,9 @@
 写笔记 (MD)  →  选择平台  →  一键同步  →  审查后发布
      │              │            │            │
      │         ┌─────┴────┐      │            │
-     │         │ 公众号    │      │            │
+     │         │ 公众号    │      │           │
      │         │ 头条号    │  自动填充         │
-     │         │ 更多...   │  到平台后台      │
+     │         │ 更多...   │  到平台后台       │
      │         └──────────┘      │            │
      │                           ▼            │
      │                    浏览器打开           │
@@ -153,7 +188,7 @@ obsidian-media-publisher/
 
 ```bash
 # 克隆
-git clone https://github.com/your-username/spider-media.git
+git clone https://github.com/ivanzwb/spider-media.git
 
 # 安装
 npm install
@@ -168,3 +203,33 @@ npm run build
 ## License
 
 MIT
+
+## 常见问题 FAQ
+
+**Q: 这个插件需要安装外部 Chrome 或 puppeteer 吗？**
+A: 不需要。Spider Media 直接使用 Obsidian 内置的 Electron `<webview>` 标签，零额外依赖，登录态通过 `partition="persist:..."` 持久化，扫码一次长期可用。
+
+**Q: 支持移动端 Obsidian 吗？**
+A: 不支持。`isDesktopOnly: true`，因为 Electron `<webview>` 只在桌面端可用。
+
+**Q: 公众号/头条号 DOM 改版后注入失败怎么办？**
+A: 在嵌入浏览器视图工具栏点 `DevTools` 打开 console，把 `[spider-media]` 开头的日志贴到 [issue](https://github.com/ivanzwb/spider-media/issues) 中，作者会跟进修复 selector。
+
+**Q: Mermaid 图为什么转成 PNG 而不是直接插 SVG？**
+A: 微信公众号 / 头条号编辑器都会过滤 inline `<svg>`。插件用 Obsidian 全局 mermaid 渲染 SVG 后用 canvas 栅格化为 base64 PNG 内嵌，保证发布后图形不丢失。
+
+**Q: 发布后能直接群发吗？**
+A: 不能。插件只把内容注入到平台后台编辑器，**用户需在平台原生页面 Review 后手动点击「发布」/「保存并群发」**，避免误发。
+
+**Q: 如何添加新平台（例如知乎、小红书、CSDN）？**
+A: 参考 [add-platform skill](.github/skills/add-platform/SKILL.md) 与 [ARCHITECTURE.md §4](ARCHITECTURE.md#4-扩展新平台)，新增一个平台约 ~480 行代码（formatter + adapter + BrowserView + templates）。
+
+## 支持作者
+
+如果 Spider Media 帮你节省了发布到自媒体平台的时间，欢迎请作者喝杯咖啡 ☕。
+
+| 微信赞赏 | 支付宝 |
+| :---: | :---: |
+| <img src="assets/donate/wechat.png" alt="微信赞赏码" width="200" /> | <img src="assets/donate/alipay.png" alt="支付宝收款码" width="200" /> |
+
+更多说明见 [DONATE.md](DONATE.md)。也欢迎通过 issue / PR 参与项目改进。

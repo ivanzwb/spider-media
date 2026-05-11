@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 使用问题 / 讨论
+    url: https://github.com/ivanzwb/spider-media/discussions
+    about: 使用方法、模板分享、功能讨论请到 Discussions
+  - name: 📖 架构与开发文档
+    url: https://github.com/ivanzwb/spider-media/blob/main/ARCHITECTURE.md
+    about: 提 issue 前先看一下架构与扩展指南

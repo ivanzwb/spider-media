@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Spider Media — Obsidian self-media publishing plugin"
+abstract: >
+  Obsidian plugin that publishes Markdown notes to WeChat Official Account,
+  Toutiao and other Chinese self-media platforms via embedded Electron webview.
+authors:
+  - family-names: ivanzwb
+    given-names: " "
+type: software
+license: MIT
+repository-code: "https://github.com/ivanzwb/spider-media"
+url: "https://github.com/ivanzwb/spider-media"
+keywords:
+  - obsidian
+  - obsidian-plugin
+  - wechat
+  - toutiao
+  - self-media
+  - markdown
+  - mermaid
+  - publishing
