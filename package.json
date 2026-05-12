@@ -1,6 +1,6 @@
 {
   "name": "spider-media",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Obsidian plugin that publishes Markdown notes to WeChat Official Account (微信公众号), Toutiao (头条号) and other Chinese self-media platforms with one click. Renders Mermaid to PNG, inlines CSS, and injects content via embedded Electron webview — no external Chrome / puppeteer required.",
   "main": "main.js",
   "scripts": {
