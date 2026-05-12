@@ -56,6 +56,14 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 				"同微信，使用嵌入式 webview 方式。命令面板执行「打开嵌入式头条号浏览器」登录后即可发布。",
 			);
 
+		containerEl.createEl("h3", { text: "知乎" });
+
+		new Setting(containerEl)
+			.setName("发布方式")
+			.setDesc(
+				"同微信，使用嵌入式 webview 方式。命令面板执行「打开嵌入式知乎浏览器」登录后即可发布到「写文章」页面。",
+			);
+
 		containerEl.createEl("h3", { text: "默认排版参数" });
 
 		const t = this.plugin.settings.tweaks;

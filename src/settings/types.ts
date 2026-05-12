@@ -8,12 +8,17 @@ export interface ToutiaoPlatformSettings {
 	defaultTemplateId: string;
 }
 
+export interface ZhihuPlatformSettings {
+	defaultTemplateId: string;
+}
+
 export interface SpiderMediaSettings {
 	defaultPlatform: string;
 	imageInlineThresholdKB: number;
 	tweaks: FormatTweaks;
 	wechat: WeChatPlatformSettings;
 	toutiao: ToutiaoPlatformSettings;
+	zhihu: ZhihuPlatformSettings;
 }
 
 export const DEFAULT_SETTINGS: SpiderMediaSettings = {
@@ -25,5 +30,8 @@ export const DEFAULT_SETTINGS: SpiderMediaSettings = {
 	},
 	toutiao: {
 		defaultTemplateId: "toutiao-default",
+	},
+	zhihu: {
+		defaultTemplateId: "zhihu-default",
 	},
 };

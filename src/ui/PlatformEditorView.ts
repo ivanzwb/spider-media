@@ -248,14 +248,15 @@ export class PlatformEditorView extends ItemView {
 			const template = this.getActiveTemplate(adapter);
 			// 公众号 / 头条号都有独立标题输入框，正文不应再带 H1（否则会出现重复标题）。
 			const platformId = adapter.meta.id;
-			const hasNativeTitleInput = platformId === "wechat" || platformId === "toutiao";
+			const hasNativeTitleInput =
+				platformId === "wechat" || platformId === "toutiao" || platformId === "zhihu";
 			const md = hasNativeTitleInput ? (this.currentMarkdown ?? "") : this.buildMarkdownWithTitle();
 			const html = await adapter.format(
 				md,
 				template,
 				this.plugin.settings.tweaks,
 			);
-			// 微信 / 头条号都走 Obsidian 内嵌 webview，免外部 Chrome
+			// 微信 / 头条号 / 知乎都走 Obsidian 内嵌 webview，免外部 Chrome
 			if (platformId === "wechat") {
 				this.setStatus("打开内嵌浏览器…");
 				const view = await this.plugin.openWeChatBrowser();
@@ -268,6 +269,13 @@ export class PlatformEditorView extends ItemView {
 				const view = await this.plugin.openToutiaoBrowser();
 				await view.submitPayload({ title: this.currentTitle, html });
 				this.setStatus("已切到头条号嵌入浏览器执行注入");
+				return;
+			}
+			if (platformId === "zhihu") {
+				this.setStatus("打开知乎嵌入浏览器…");
+				const view = await this.plugin.openZhihuBrowser();
+				await view.submitPayload({ title: this.currentTitle, html });
+				this.setStatus("已切到知乎嵌入浏览器执行注入");
 				return;
 			}
 			this.setStatus("正在发布…");

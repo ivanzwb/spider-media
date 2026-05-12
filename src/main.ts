@@ -2,11 +2,13 @@ import { addIcon, Plugin, WorkspaceLeaf } from "obsidian";
 import type { PlatformAdapter } from "@/platforms/base";
 import { WeChatAdapter } from "@/platforms/wechat";
 import { ToutiaoAdapter } from "@/platforms/toutiao";
+import { ZhihuAdapter } from "@/platforms/zhihu";
 import { SpiderMediaSettingTab } from "@/settings/SettingsTab";
 import { DEFAULT_SETTINGS, type SpiderMediaSettings } from "@/settings/types";
 import { PlatformEditorView, VIEW_TYPE_SPIDER_MEDIA } from "@/ui/PlatformEditorView";
 import { WeChatBrowserView, VIEW_TYPE_WECHAT_BROWSER } from "@/ui/WeChatBrowserView";
 import { ToutiaoBrowserView, VIEW_TYPE_TOUTIAO_BROWSER } from "@/ui/ToutiaoBrowserView";
+import { ZhihuBrowserView, VIEW_TYPE_ZHIHU_BROWSER } from "@/ui/ZhihuBrowserView";
 
 /**
  * 自定义 Spider Media ribbon 图标。
@@ -58,6 +60,10 @@ export default class SpiderMediaPlugin extends Plugin {
 			VIEW_TYPE_TOUTIAO_BROWSER,
 			(leaf) => new ToutiaoBrowserView(leaf, this),
 		);
+		this.registerView(
+			VIEW_TYPE_ZHIHU_BROWSER,
+			(leaf) => new ZhihuBrowserView(leaf, this),
+		);
 
 		this.addRibbonIcon(SPIDER_MEDIA_ICON_ID, "打开自媒体发布编辑器", () => {
 			void this.activateView();
@@ -82,6 +88,12 @@ export default class SpiderMediaPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "open-zhihu-embedded-browser",
+			name: "打开嵌入式知乎浏览器",
+			callback: () => void this.openZhihuBrowser(),
+		});
+
+		this.addCommand({
 			id: "publish-active-note-to-default",
 			name: "同步当前笔记到默认平台",
 			checkCallback: (checking) => {
@@ -99,6 +111,7 @@ export default class SpiderMediaPlugin extends Plugin {
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_SPIDER_MEDIA);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_WECHAT_BROWSER);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TOUTIAO_BROWSER);
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_ZHIHU_BROWSER);
 	}
 
 	async loadSettings(): Promise<void> {
@@ -109,6 +122,7 @@ export default class SpiderMediaPlugin extends Plugin {
 			tweaks: { ...DEFAULT_SETTINGS.tweaks, ...(data?.tweaks ?? {}) },
 			wechat: { ...DEFAULT_SETTINGS.wechat, ...(data?.wechat ?? {}) },
 			toutiao: { ...DEFAULT_SETTINGS.toutiao, ...(data?.toutiao ?? {}) },
+			zhihu: { ...DEFAULT_SETTINGS.zhihu, ...(data?.zhihu ?? {}) },
 		};
 	}
 
@@ -138,6 +152,13 @@ export default class SpiderMediaPlugin extends Plugin {
 			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
 		});
 		this.platforms.set(toutiao.meta.id, toutiao);
+
+		const zhihu = new ZhihuAdapter({
+			context: { vault: this.app.vault },
+			noteDir: "",
+			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
+		});
+		this.platforms.set(zhihu.meta.id, zhihu);
 	}
 
 	private async activateView(): Promise<void> {
@@ -164,6 +185,11 @@ export default class SpiderMediaPlugin extends Plugin {
 	/** 在主编辑区打开嵌入式头条号浏览器 */
 	async openToutiaoBrowser(): Promise<ToutiaoBrowserView> {
 		return this.openEmbeddedBrowser(VIEW_TYPE_TOUTIAO_BROWSER) as Promise<ToutiaoBrowserView>;
+	}
+
+	/** 在主编辑区打开嵌入式知乎浏览器 */
+	async openZhihuBrowser(): Promise<ZhihuBrowserView> {
+		return this.openEmbeddedBrowser(VIEW_TYPE_ZHIHU_BROWSER) as Promise<ZhihuBrowserView>;
 	}
 
 	private async openEmbeddedBrowser(viewType: string): Promise<unknown> {
