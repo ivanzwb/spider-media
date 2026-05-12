@@ -95,15 +95,11 @@ The script auto-runs `npm run build` if `dist/` is missing, then copies
 
 ## 截图 / Screenshots
 
-> 截图占位 — 实际图片放在 [assets/screenshots/](assets/screenshots/)，添加后下方引用即可显示。
-
 | 场景 | 预览 |
 | --- | --- |
-| 发布编辑器视图 | ![editor](assets/screenshots/01-editor-view.png) |
-| 微信公众号注入 | ![wechat](assets/screenshots/02-wechat-injection.png) |
-| 头条号注入 | ![toutiao](assets/screenshots/03-toutiao-injection.png) |
-| 知乎专栏注入 | ![zhihu](assets/screenshots/04-zhihu-injection.png) |
-| 设置页 | ![settings](assets/screenshots/05-settings.png) |
+| 发布编辑器视图 | ![overview](screenshots/overview.png) |
+| 微信公众号注入 | ![wechat](screenshots/wechat.png) |
+| 设置页 | ![settings](screenshots/settings.png) |
 
 ## 快速开始
 
