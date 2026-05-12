@@ -1,7 +1,7 @@
 {
   "id": "spider-media",
   "name": "Spider Media",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "minAppVersion": "1.5.0",
   "description": "Publish Markdown notes to WeChat Official Account, Toutiao and other Chinese self-media platforms via an embedded webview. Renders Mermaid diagrams to images and inlines styles automatically.",
   "author": "ivanzwb",
