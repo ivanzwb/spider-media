@@ -51,7 +51,8 @@ export class PlatformEditorView extends ItemView {
 	}
 
 	getIcon(): string {
-		return "message-square";
+		// 与 ribbon 共用同一个自定义图标（main.ts 中通过 addIcon 注册）
+		return "spider-media-icon";
 	}
 
 	async onOpen(): Promise<void> {
