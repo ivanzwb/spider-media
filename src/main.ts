@@ -8,6 +8,34 @@ import { PlatformEditorView, VIEW_TYPE_SPIDER_MEDIA } from "@/ui/PlatformEditorV
 import { WeChatBrowserView, VIEW_TYPE_WECHAT_BROWSER } from "@/ui/WeChatBrowserView";
 import { ToutiaoBrowserView, VIEW_TYPE_TOUTIAO_BROWSER } from "@/ui/ToutiaoBrowserView";
 
+/** 自定义 Spider Media ribbon 图标：蜘蛛 + 箭头 */
+const SPIDER_MEDIA_ICON = `<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景透明 -->
+
+  <!-- 蜘蛛腿部 -->
+  <path d="M60 80 L30 50" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 左上 -->
+  <path d="M60 100 L20 90" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 左中 -->
+  <path d="M60 120 L30 150" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 左下 -->
+  <path d="M140 80 L170 50" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 右上 -->
+  <path d="M140 100 L180 90" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 右中 -->
+  <path d="M140 120 L170 150" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 右下 -->
+
+  <!-- 蜘蛛腹部 (主体) -->
+  <ellipse cx="100" cy="115" rx="45" ry="55" fill="white" stroke="#1E293B" stroke-width="8"/>
+
+  <!-- 腹部内的图标：向下箭头 (代表发布/传输) -->
+  <path d="M100 95 V135" stroke="#1E293B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M85 120 L100 135 L115 120" stroke="#1E293B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 蜘蛛头部 -->
+  <circle cx="100" cy="60" r="20" fill="white" stroke="#1E293B" stroke-width="8"/>
+
+  <!-- 触须 -->
+  <path d="M90 45 L85 30" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
+  <path d="M110 45 L115 30" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
+
+</svg>`;
+
 export default class SpiderMediaPlugin extends Plugin {
 	settings!: SpiderMediaSettings;
 	platforms: Map<string, PlatformAdapter> = new Map();
@@ -29,7 +57,7 @@ export default class SpiderMediaPlugin extends Plugin {
 			(leaf) => new ToutiaoBrowserView(leaf, this),
 		);
 
-		this.addRibbonIcon("message-square", "打开自媒体发布编辑器", () => {
+		this.addRibbonIcon(SPIDER_MEDIA_ICON, "打开自媒体发布编辑器", () => {
 			void this.activateView();
 		});
 
