@@ -93,6 +93,18 @@ The script auto-runs `npm run build` if `dist/` is missing, then copies
 | **样式模板** | 5 套内置主题（精简绿/橙心/蓝调/雅黑/极简），支持自定义字号/颜色/间距/标题装饰/代码主题 |
 | **易于扩展** | 添加新平台只需 ~300 行代码 |
 
+## 截图 / Screenshots
+
+> 截图占位 — 实际图片放在 [assets/screenshots/](assets/screenshots/)，添加后下方引用即可显示。
+
+| 场景 | 预览 |
+| --- | --- |
+| 发布编辑器视图 | ![editor](assets/screenshots/01-editor-view.png) |
+| 微信公众号注入 | ![wechat](assets/screenshots/02-wechat-injection.png) |
+| 头条号注入 | ![toutiao](assets/screenshots/03-toutiao-injection.png) |
+| 知乎专栏注入 | ![zhihu](assets/screenshots/04-zhihu-injection.png) |
+| 设置页 | ![settings](assets/screenshots/05-settings.png) |
+
 ## 快速开始
 
 ### 安装
@@ -183,7 +195,7 @@ npm run install:vault -- "D:/path/to/your/vault"
 |------|------|------|
 | 微信公众号 | ✅ 已实现 | 内嵌 webview + MP_Editor JsApi 注入正文，自动跳转新建图文 |
 | 头条号 | 🚧 实验性 | 内嵌 webview + ProseMirror paste 注入正文 / 标题（接口未稳定，DOM 可能变更） |
-| 知乎 | � 实验性 | 内嵌 webview + Draft.js / ProseMirror paste 注入专栏正文 / 标题 |
+| 知乎 | 🚧 实验性 | 内嵌 webview + Draft.js / ProseMirror paste 注入专栏正文 / 标题 |
 | 小红书 | 📝 待定 | - |
 | CSDN | 📝 待定 | - |
 
