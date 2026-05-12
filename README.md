@@ -32,6 +32,23 @@ No external Chrome / puppeteer is required. No telemetry. MIT-licensed.
 2. Copy them to `<your-vault>/.obsidian/plugins/spider-media/`.
 3. Reload Obsidian → Settings → Community plugins → enable **Spider Media**.
 
+### Install (From source)
+
+Clone & build, then use the bundled installer to drop the artifacts into your vault:
+
+```bash
+git clone https://github.com/ivanzwb/spider-media.git
+cd spider-media
+npm install
+npm run install:vault -- "/absolute/path/to/your/vault"
+# or:  node install.mjs "/absolute/path/to/your/vault"
+# or:  SPIDER_MEDIA_VAULT="/path/to/vault" node install.mjs
+```
+
+The script auto-runs `npm run build` if `dist/` is missing, then copies
+`main.js` / `manifest.json` / `styles.css` to
+`<vault>/.obsidian/plugins/spider-media/`. Re-run anytime to update.
+
 ### Limitations
 
 - Desktop only (`isDesktopOnly: true`) — relies on Electron `<webview>`.
@@ -80,10 +97,29 @@ No external Chrome / puppeteer is required. No telemetry. MIT-licensed.
 
 ### 安装
 
-1. 从 Releases 下载 `main.js`、`manifest.json`、`styles.css`
+**方式 A：手动下载**
+
+1. 从 [Releases](https://github.com/ivanzwb/spider-media/releases) 下载 `main.js`、`manifest.json`、`styles.css`
 2. 在 vault 目录创建 `.obsidian/plugins/spider-media/`
 3. 将下载的文件放入该目录
 4. 重启 Obsidian，在设置 → 第三方插件中启用
+
+**方式 B：从源码一键安装**
+
+```bash
+git clone https://github.com/ivanzwb/spider-media.git
+cd spider-media
+npm install
+npm run install:vault -- "D:/path/to/your/vault"
+```
+
+[install.mjs](install.mjs) 会自动完成：
+- 检查 vault 路径合法（必须含 `.obsidian/` 子目录）
+- 缺 `dist/` 时自动跑 `npm run build`
+- 创建 `<vault>/.obsidian/plugins/spider-media/` 并复制三件套
+- 可反复运行以更新插件
+
+也可用环境变量：`SPIDER_MEDIA_VAULT="D:/path/to/vault" node install.mjs`
 
 ### 使用
 

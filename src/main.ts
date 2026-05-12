@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { addIcon, Plugin, WorkspaceLeaf } from "obsidian";
 import type { PlatformAdapter } from "@/platforms/base";
 import { WeChatAdapter } from "@/platforms/wechat";
 import { ToutiaoAdapter } from "@/platforms/toutiao";
@@ -8,39 +8,41 @@ import { PlatformEditorView, VIEW_TYPE_SPIDER_MEDIA } from "@/ui/PlatformEditorV
 import { WeChatBrowserView, VIEW_TYPE_WECHAT_BROWSER } from "@/ui/WeChatBrowserView";
 import { ToutiaoBrowserView, VIEW_TYPE_TOUTIAO_BROWSER } from "@/ui/ToutiaoBrowserView";
 
-/** 自定义 Spider Media ribbon 图标：蜘蛛 + 箭头 */
-const SPIDER_MEDIA_ICON = `<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- 背景透明 -->
-
-  <!-- 蜘蛛腿部 -->
-  <path d="M60 80 L30 50" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 左上 -->
-  <path d="M60 100 L20 90" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 左中 -->
-  <path d="M60 120 L30 150" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 左下 -->
-  <path d="M140 80 L170 50" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 右上 -->
-  <path d="M140 100 L180 90" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 右中 -->
-  <path d="M140 120 L170 150" stroke="#1E293B" stroke-width="8" stroke-linecap="round"/> <!-- 右下 -->
-
-  <!-- 蜘蛛腹部 (主体) -->
-  <ellipse cx="100" cy="115" rx="45" ry="55" fill="white" stroke="#1E293B" stroke-width="8"/>
-
-  <!-- 腹部内的图标：向下箭头 (代表发布/传输) -->
-  <path d="M100 95 V135" stroke="#1E293B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M85 120 L100 135 L115 120" stroke="#1E293B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- 蜘蛛头部 -->
-  <circle cx="100" cy="60" r="20" fill="white" stroke="#1E293B" stroke-width="8"/>
-
-  <!-- 触须 -->
-  <path d="M90 45 L85 30" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
-  <path d="M110 45 L115 30" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
-
-</svg>`;
+/**
+ * 自定义 Spider Media ribbon 图标。
+ *
+ * 注意：Obsidian 的 addIcon() 要求 viewBox 为 0 0 100 100，且只接受 <svg> 的
+ * 内部内容（不带最外层 <svg> 标签）。颜色用 currentColor 才能跟随主题色。
+ */
+const SPIDER_MEDIA_ICON_ID = "spider-media-icon";
+const SPIDER_MEDIA_ICON_SVG = `
+  <g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 蜘蛛腿 -->
+    <path d="M30 40 L15 25" />
+    <path d="M30 50 L10 45" />
+    <path d="M30 60 L15 75" />
+    <path d="M70 40 L85 25" />
+    <path d="M70 50 L90 45" />
+    <path d="M70 60 L85 75" />
+    <!-- 头 -->
+    <circle cx="50" cy="30" r="10" />
+    <!-- 触须 -->
+    <path d="M45 22 L42 14" />
+    <path d="M55 22 L58 14" />
+    <!-- 腹部 -->
+    <ellipse cx="50" cy="58" rx="22" ry="28" />
+    <!-- 向下箭头：发布/同步寓意 -->
+    <path d="M50 48 L50 68" />
+    <path d="M42 60 L50 68 L58 60" />
+  </g>
+`;
 
 export default class SpiderMediaPlugin extends Plugin {
 	settings!: SpiderMediaSettings;
 	platforms: Map<string, PlatformAdapter> = new Map();
 
 	async onload(): Promise<void> {
+		addIcon(SPIDER_MEDIA_ICON_ID, SPIDER_MEDIA_ICON_SVG);
 		await this.loadSettings();
 		this.registerPlatforms();
 
@@ -57,7 +59,7 @@ export default class SpiderMediaPlugin extends Plugin {
 			(leaf) => new ToutiaoBrowserView(leaf, this),
 		);
 
-		this.addRibbonIcon(SPIDER_MEDIA_ICON, "打开自媒体发布编辑器", () => {
+		this.addRibbonIcon(SPIDER_MEDIA_ICON_ID, "打开自媒体发布编辑器", () => {
 			void this.activateView();
 		});
 
