@@ -183,7 +183,7 @@ npm run install:vault -- "D:/path/to/your/vault"
 |------|------|------|
 | 微信公众号 | ✅ 已实现 | 内嵌 webview + MP_Editor JsApi 注入正文，自动跳转新建图文 |
 | 头条号 | 🚧 实验性 | 内嵌 webview + ProseMirror paste 注入正文 / 标题（接口未稳定，DOM 可能变更） |
-| 知乎 | 📝 待定 | - |
+| 知乎 | � 实验性 | 内嵌 webview + Draft.js / ProseMirror paste 注入专栏正文 / 标题 |
 | 小红书 | 📝 待定 | - |
 | CSDN | 📝 待定 | - |
 
@@ -202,7 +202,8 @@ obsidian-media-publisher/
 │   ├── platforms/               # 平台适配器
 │   │   ├── base/                # 抽象基类
 │   │   ├── wechat/              # 公众号
-│   │   └── toutiao/             # 头条号
+│   │   ├── toutiao/             # 头条号
+│   │   └── zhihu/               # 知乎
 │   ├── ui/                      # 编辑器 UI + 嵌入 webview 视图
 │   └── settings/                # 配置页
 ├── manifest.json
