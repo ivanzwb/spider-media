@@ -228,8 +228,4 @@ A: 参考 [add-platform skill](.github/skills/add-platform/SKILL.md) 与 [ARCHIT
 
 如果 Spider Media 帮你节省了发布到自媒体平台的时间，欢迎请作者喝杯咖啡 ☕。
 
-| 微信赞赏 | 支付宝 |
-| :---: | :---: |
-| <img src="assets/donate/wechat.png" alt="微信赞赏码" width="200" /> | <img src="assets/donate/alipay.png" alt="支付宝收款码" width="200" /> |
-
 更多说明见 [DONATE.md](DONATE.md)。也欢迎通过 issue / PR 参与项目改进。
