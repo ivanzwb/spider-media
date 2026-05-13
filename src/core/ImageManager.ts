@@ -55,7 +55,28 @@ export class ImageManager {
 
 	private findFile(src: string): TFile | null {
 		const decoded = decodeURIComponent(src);
-		const candidates = [decoded, `${this.options.noteDir}/${decoded}`.replace(/^\/+/, "")];
+		const nd = this.options.noteDir.replace(/^\/+|\/+$/g, "");
+		const candidates: string[] = [];
+
+		// 1. 原样路径（可能已是 vault 绝对路径）
+		candidates.push(decoded);
+
+		// 2. 笔记目录 + 原路径
+		if (nd) {
+			candidates.push(`${nd}/${decoded}`.replace(/^\/+/, ""));
+			// 3. 仅文件名（去掉路径目录）在笔记目录下
+			const basename = decoded.replace(/^.*[/\\]/, "");
+			if (basename !== decoded) {
+				candidates.push(`${nd}/${basename}`);
+			}
+		}
+
+		// 4. 仅文件名在 vault 根目录
+		const basename2 = decoded.replace(/^.*[/\\]/, "");
+		if (basename2 !== decoded && !candidates.includes(basename2)) {
+			candidates.push(basename2);
+		}
+
 		for (const path of candidates) {
 			const file = this.vault.getFileByPath(path);
 			if (file) return file;

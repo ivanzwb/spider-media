@@ -39,6 +39,21 @@ export function convertImageWikilinks(text: string): string {
 }
 
 /**
+ * 将标准 Markdown 图片 `![alt](url)` / `![](url)` 中的空格编码为 %20。
+ *
+ * marked v18 不处理图片 URL 中的空格 —— `![](a b.png)` 会原样输出而非解析为 `<img>`。
+ * 此函数在 marked 解析前将空格转义，保证后续 ImageManager 的 decodeURIComponent 能还原。
+ */
+export function encodeImageUrlSpaces(text: string): string {
+	return text.replace(
+		/!\[([^\]]*)\]\(([^)]+)\)/g,
+		(_match: string, alt: string, url: string): string => {
+			return `![${alt}](${url.replace(/ /g, "%20")})`;
+		},
+	);
+}
+
+/**
  * 平台无关的 Markdown 解析器。
  *
  * 全局负责: Mermaid 占位符化（实际渲染由 MermaidConverter 后处理替换）。
@@ -60,7 +75,7 @@ export class MarkdownParser {
 	}
 
 	async parse(markdown: string): Promise<string> {
-		const preprocessed = convertImageWikilinks(markdown);
+		const preprocessed = encodeImageUrlSpaces(convertImageWikilinks(markdown));
 		const result = await this.marked.parse(preprocessed, { async: true });
 		return result;
 	}
