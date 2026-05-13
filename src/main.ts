@@ -70,7 +70,7 @@ export default class SpiderMediaPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "open-spider-media-view",
+			id: "open-editor",
 			name: "打开自媒体发布编辑器",
 			callback: () => void this.activateView(),
 		});
@@ -108,10 +108,10 @@ export default class SpiderMediaPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_SPIDER_MEDIA);
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_WECHAT_BROWSER);
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TOUTIAO_BROWSER);
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_ZHIHU_BROWSER);
+
+
+
+
 	}
 
 	async loadSettings(): Promise<void> {

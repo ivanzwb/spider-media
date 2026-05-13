@@ -80,13 +80,10 @@ export class ZhihuBrowserView extends ItemView {
 		this.btn(toolbar, "DevTools", () => this.webview.openDevTools());
 		this.statusEl = toolbar.createSpan({ cls: "smb-status", text: "加载中…" });
 
-		this.webview = document.createElement("webview") as unknown as WebviewElement;
+		this.webview = activeDocument.createElement("webview") as unknown as WebviewElement;
 		this.webview.setAttribute("src", ZHIHU_HOME);
 		this.webview.setAttribute("partition", ZHIHU_PARTITION);
 		this.webview.setAttribute("allowpopups", "true");
-		this.webview.style.flex = "1";
-		this.webview.style.width = "100%";
-		this.webview.style.minHeight = "0";
 		root.appendChild(this.webview);
 
 		this.webview.addEventListener("dom-ready", () => {
@@ -115,7 +112,7 @@ export class ZhihuBrowserView extends ItemView {
 	private async waitReady(timeoutMs = 10_000): Promise<void> {
 		const deadline = Date.now() + timeoutMs;
 		while (!this.isReady && Date.now() < deadline) {
-			await new Promise((r) => setTimeout(r, 100));
+			await new Promise((r) => window.setTimeout(r, 100));
 		}
 	}
 
@@ -132,7 +129,7 @@ export class ZhihuBrowserView extends ItemView {
 				return;
 			}
 			await this.webview.loadURL(ZHIHU_PUBLISH);
-			await new Promise((r) => setTimeout(r, 4000));
+			await new Promise((r) => window.setTimeout(r, 4000));
 		}
 
 		const { title, html } = this.pending;

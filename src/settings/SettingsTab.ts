@@ -10,14 +10,12 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Spider Media — 自媒体发布" });
-
 		new Setting(containerEl)
 			.setName("默认平台")
 			.setDesc("打开发布视图时默认选中的平台 ID")
 			.addText((text) =>
 				text
-					.setPlaceholder("wechat")
+					.setPlaceholder("WeChat")
 					.setValue(this.plugin.settings.defaultPlatform)
 					.onChange(async (value) => {
 						this.plugin.settings.defaultPlatform = value.trim() || "wechat";
@@ -40,7 +38,7 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "微信公众号" });
+		new Setting(containerEl).setName("微信公众号").setHeading();
 
 		new Setting(containerEl)
 			.setName("发布方式")
@@ -48,7 +46,7 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 				"内嵌 Electron webview，partition 持久会话。命令面板执行「打开嵌入式微信公众号浏览器」即可扫码登录（一次即可），后续发布会自动注入到该 webview。",
 			);
 
-		containerEl.createEl("h3", { text: "头条号" });
+		new Setting(containerEl).setName("头条号").setHeading();
 
 		new Setting(containerEl)
 			.setName("发布方式")
@@ -56,7 +54,7 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 				"同微信，使用嵌入式 webview 方式。命令面板执行「打开嵌入式头条号浏览器」登录后即可发布。",
 			);
 
-		containerEl.createEl("h3", { text: "知乎" });
+		new Setting(containerEl).setName("知乎").setHeading();
 
 		new Setting(containerEl)
 			.setName("发布方式")
@@ -64,7 +62,7 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 				"同微信，使用嵌入式 webview 方式。命令面板执行「打开嵌入式知乎浏览器」登录后即可发布到「写文章」页面。",
 			);
 
-		containerEl.createEl("h3", { text: "默认排版参数" });
+		new Setting(containerEl).setName("默认排版参数").setHeading();
 
 		const t = this.plugin.settings.tweaks;
 		this.numberSetting(containerEl, "字号 (px)", t.fontSize, (v) => {
@@ -116,7 +114,7 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 					.addOption("template", "跟随模板")
 					.addOption("dark", "暗色")
 					.addOption("light", "浅色")
-					.addOption("github", "GitHub Light")
+					.addOption("github", "GitHub light")
 					.addOption("dracula", "Dracula")
 					.setValue(this.plugin.settings.tweaks.codeTheme)
 					.onChange(async (value) => {

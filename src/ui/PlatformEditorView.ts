@@ -209,7 +209,10 @@ export class PlatformEditorView extends ItemView {
 				template,
 				this.plugin.settings.tweaks,
 			);
-			this.previewEl.innerHTML = html;
+			this.previewEl.empty();
+			const range = activeDocument.createRange();
+			// eslint-disable-next-line no-unsanitized/method -- html comes from our own marked + juice pipeline (trusted)
+			this.previewEl.appendChild(range.createContextualFragment(html));
 			this.setStatus(`预览已更新 · ${this.currentMarkdown.length} 字符`);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);

@@ -131,7 +131,7 @@ export class MermaidConverter {
 			for (let i = 0; i < utf8.length; i++) bin += String.fromCharCode(utf8[i]);
 			const dataUrl = `data:image/svg+xml;base64,${btoa(bin)}`;
 			const img = await this.loadImage(dataUrl);
-			const canvas = document.createElement("canvas");
+			const canvas = activeDocument.createElement("canvas");
 			canvas.width = Math.max(1, Math.round(width * scale));
 			canvas.height = Math.max(1, Math.round(height * scale));
 			const ctx = canvas.getContext("2d");
@@ -151,7 +151,7 @@ export class MermaidConverter {
 		return new Promise((resolve, reject) => {
 			const img = new Image();
 			img.onload = () => resolve(img);
-			img.onerror = (e) => reject(e);
+			img.onerror = () => reject(new Error(`Failed to load image from ${src.slice(0, 64)}…`));
 			img.src = src;
 		});
 	}

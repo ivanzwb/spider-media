@@ -25,7 +25,7 @@ export class MarkdownParser {
 
 	async parse(markdown: string): Promise<string> {
 		const result = await this.marked.parse(markdown, { async: true });
-		return typeof result === "string" ? result : await result;
+		return result;
 	}
 
 	/**
