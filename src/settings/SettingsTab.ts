@@ -62,6 +62,14 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 				"同微信，使用嵌入式 webview 方式。命令面板执行「打开嵌入式知乎浏览器」登录后即可发布到「写文章」页面。",
 			);
 
+		new Setting(containerEl).setName("小红书").setHeading();
+
+		new Setting(containerEl)
+			.setName("发布方式")
+			.setDesc(
+				"内嵌 Electron webview 登录创作中心，命令面板执行「打开嵌入式小红书浏览器」即可。注意：小红书编辑器不支持 HTML，正文会自动转为纯文本，图片需手动上传。",
+			);
+
 		new Setting(containerEl).setName("默认排版参数").setHeading();
 
 		const t = this.plugin.settings.tweaks;

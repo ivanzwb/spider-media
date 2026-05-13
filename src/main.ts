@@ -3,12 +3,14 @@ import type { PlatformAdapter } from "@/platforms/base";
 import { WeChatAdapter } from "@/platforms/wechat";
 import { ToutiaoAdapter } from "@/platforms/toutiao";
 import { ZhihuAdapter } from "@/platforms/zhihu";
+import { XiaohongshuAdapter } from "@/platforms/xiaohongshu";
 import { SpiderMediaSettingTab } from "@/settings/SettingsTab";
 import { DEFAULT_SETTINGS, type SpiderMediaSettings } from "@/settings/types";
 import { PlatformEditorView, VIEW_TYPE_SPIDER_MEDIA } from "@/ui/PlatformEditorView";
 import { WeChatBrowserView, VIEW_TYPE_WECHAT_BROWSER } from "@/ui/WeChatBrowserView";
 import { ToutiaoBrowserView, VIEW_TYPE_TOUTIAO_BROWSER } from "@/ui/ToutiaoBrowserView";
 import { ZhihuBrowserView, VIEW_TYPE_ZHIHU_BROWSER } from "@/ui/ZhihuBrowserView";
+import { XiaohongshuBrowserView, VIEW_TYPE_XIAOHONGSHU_BROWSER } from "@/ui/XiaohongshuBrowserView";
 
 /**
  * 自定义 Spider Media ribbon 图标。
@@ -64,6 +66,10 @@ export default class SpiderMediaPlugin extends Plugin {
 			VIEW_TYPE_ZHIHU_BROWSER,
 			(leaf) => new ZhihuBrowserView(leaf, this),
 		);
+		this.registerView(
+			VIEW_TYPE_XIAOHONGSHU_BROWSER,
+			(leaf) => new XiaohongshuBrowserView(leaf, this),
+		);
 
 		this.addRibbonIcon(SPIDER_MEDIA_ICON_ID, "打开自媒体发布编辑器", () => {
 			void this.activateView();
@@ -91,6 +97,12 @@ export default class SpiderMediaPlugin extends Plugin {
 			id: "open-zhihu-embedded-browser",
 			name: "打开嵌入式知乎浏览器",
 			callback: () => void this.openZhihuBrowser(),
+		});
+
+		this.addCommand({
+			id: "open-xiaohongshu-embedded-browser",
+			name: "打开嵌入式小红书浏览器",
+			callback: () => void this.openXiaohongshuBrowser(),
 		});
 
 		this.addCommand({
@@ -123,6 +135,7 @@ export default class SpiderMediaPlugin extends Plugin {
 			wechat: { ...DEFAULT_SETTINGS.wechat, ...(data?.wechat ?? {}) },
 			toutiao: { ...DEFAULT_SETTINGS.toutiao, ...(data?.toutiao ?? {}) },
 			zhihu: { ...DEFAULT_SETTINGS.zhihu, ...(data?.zhihu ?? {}) },
+			xiaohongshu: { ...DEFAULT_SETTINGS.xiaohongshu, ...(data?.xiaohongshu ?? {}) },
 		};
 	}
 
@@ -159,6 +172,13 @@ export default class SpiderMediaPlugin extends Plugin {
 			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
 		});
 		this.platforms.set(zhihu.meta.id, zhihu);
+
+		const xiaohongshu = new XiaohongshuAdapter({
+			context: { vault: this.app.vault },
+			noteDir: "",
+			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
+		});
+		this.platforms.set(xiaohongshu.meta.id, xiaohongshu);
 	}
 
 	private async activateView(): Promise<void> {
@@ -190,6 +210,11 @@ export default class SpiderMediaPlugin extends Plugin {
 	/** 在主编辑区打开嵌入式知乎浏览器 */
 	async openZhihuBrowser(): Promise<ZhihuBrowserView> {
 		return this.openEmbeddedBrowser(VIEW_TYPE_ZHIHU_BROWSER) as Promise<ZhihuBrowserView>;
+	}
+
+	/** 在主编辑区打开嵌入式小红书浏览器 */
+	async openXiaohongshuBrowser(): Promise<XiaohongshuBrowserView> {
+		return this.openEmbeddedBrowser(VIEW_TYPE_XIAOHONGSHU_BROWSER) as Promise<XiaohongshuBrowserView>;
 	}
 
 	private async openEmbeddedBrowser(viewType: string): Promise<unknown> {

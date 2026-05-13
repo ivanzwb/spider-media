@@ -253,7 +253,7 @@ export class PlatformEditorView extends ItemView {
 			// 公众号 / 头条号都有独立标题输入框，正文不应再带 H1（否则会出现重复标题）。
 			const platformId = adapter.meta.id;
 			const hasNativeTitleInput =
-				platformId === "wechat" || platformId === "toutiao" || platformId === "zhihu";
+				platformId === "wechat" || platformId === "toutiao" || platformId === "zhihu" || platformId === "xiaohongshu";
 			const md = hasNativeTitleInput ? (this.currentMarkdown ?? "") : this.buildMarkdownWithTitle();
 			const html = await adapter.format(
 				md,
@@ -280,6 +280,13 @@ export class PlatformEditorView extends ItemView {
 				const view = await this.plugin.openZhihuBrowser();
 				await view.submitPayload({ title: this.currentTitle, html });
 				this.setStatus("已切到知乎嵌入浏览器执行注入");
+				return;
+			}
+			if (platformId === "xiaohongshu") {
+				this.setStatus("打开小红书嵌入浏览器…");
+				const view = await this.plugin.openXiaohongshuBrowser();
+				await view.submitPayload({ title: this.currentTitle, html });
+				this.setStatus("已切到小红书嵌入浏览器执行注入");
 				return;
 			}
 			this.setStatus("正在发布…");
