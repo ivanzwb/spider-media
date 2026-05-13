@@ -52,31 +52,48 @@ export class ImageManager {
 		return out;
 	}
 
+	/** 标准化 vault 路径：去掉 . 前缀、多余分隔符 */
+	private normalizePath(p: string): string {
+		return p
+			.replace(/^[./]+/, "")       // 去掉开头的 ./ 或 ../..
+			.replace(/[/\\]+/g, "/")     // 统一分隔符
+			.replace(/^\/+|\/+$/g, "")   // 去掉首尾 /
+			.trim();
+	}
+
 	private findFile(src: string): TFile | null {
 		const decoded = decodeURIComponent(src);
 		const nd = this.options.noteDir.replace(/^\/+|\/+$/g, "");
+		const cleaned = this.normalizePath(decoded);
 		const candidates: string[] = [];
 
-		// 1. 原样路径（可能已是 vault 绝对路径）
-		candidates.push(decoded);
+		// 1. 标准化后的路径（去掉了 ./ 前缀等）
+		if (cleaned) candidates.push(cleaned);
 
-		// 2. 笔记目录 + 原路径
+		// 2. 原样路径（可能已是 vault 绝对路径）
+		if (decoded !== cleaned) candidates.push(decoded);
+
+		// 3. 笔记目录 + 标准化路径
 		if (nd) {
-			candidates.push(`${nd}/${decoded}`.replace(/^\/+/, ""));
-			// 3. 仅文件名（去掉路径目录）在笔记目录下
-			const basename = decoded.replace(/^.*[/\\]/, "");
-			if (basename !== decoded) {
+			candidates.push(`${nd}/${cleaned}`);
+			// 4. 仅文件名在笔记目录下
+			const basename = cleaned.replace(/^.*[/\\]/, "");
+			if (basename !== cleaned) {
 				candidates.push(`${nd}/${basename}`);
 			}
 		}
 
-		// 4. 仅文件名在 vault 根目录
-		const basename2 = decoded.replace(/^.*[/\\]/, "");
-		if (basename2 !== decoded && !candidates.includes(basename2)) {
+		// 5. 仅文件名在 vault 根目录
+		const basename2 = cleaned.replace(/^.*[/\\]/, "");
+		if (basename2 !== cleaned && !candidates.includes(basename2)) {
 			candidates.push(basename2);
 		}
 
+		// 去重后依次查找
+		const seen = new Set<string>();
 		for (const path of candidates) {
+			if (seen.has(path)) continue;
+			seen.add(path);
 			const file = this.vault.getFileByPath(path);
 			if (file) return file;
 		}
