@@ -2,6 +2,8 @@ import { ImageManager } from "@/core/ImageManager";
 import { MarkdownParser } from "@/core/MarkdownParser";
 import { MermaidConverter } from "@/core/MermaidConverter";
 import { PostProcessor } from "@/core/PostProcessor";
+import { templateCompiler } from "@/core/templates";
+import { getBuiltinPacksForPlatform } from "@/core/templates/builtinPacks";
 import {
 	PlatformAdapter,
 	type Credentials,
@@ -12,7 +14,6 @@ import {
 	type Template,
 } from "@/platforms/base";
 import { ZhihuFormatter } from "./formatter";
-import { ZHIHU_TEMPLATES } from "./templates";
 
 export interface ZhihuAdapterOptions {
 	context: PlatformContext;
@@ -43,7 +44,8 @@ export class ZhihuAdapter extends PlatformAdapter {
 	}
 
 	getTemplates(): Template[] {
-		return ZHIHU_TEMPLATES;
+		return getBuiltinPacksForPlatform("zhihu")
+			.map((pack) => templateCompiler.compile(pack, "zhihu"));
 	}
 
 	async format(

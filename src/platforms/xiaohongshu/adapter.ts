@@ -2,6 +2,8 @@ import { ImageManager } from "@/core/ImageManager";
 import { MarkdownParser } from "@/core/MarkdownParser";
 import { MermaidConverter } from "@/core/MermaidConverter";
 import { PostProcessor } from "@/core/PostProcessor";
+import { templateCompiler } from "@/core/templates";
+import { getBuiltinPacksForPlatform } from "@/core/templates/builtinPacks";
 import {
 	PlatformAdapter,
 	type Credentials,
@@ -12,7 +14,6 @@ import {
 	type Template,
 } from "@/platforms/base";
 import { XiaohongshuFormatter } from "./formatter";
-import { XIAOHONGSHU_TEMPLATES } from "./templates";
 
 export interface XiaohongshuAdapterOptions {
 	context: PlatformContext;
@@ -43,7 +44,8 @@ export class XiaohongshuAdapter extends PlatformAdapter {
 	}
 
 	getTemplates(): Template[] {
-		return XIAOHONGSHU_TEMPLATES;
+		return getBuiltinPacksForPlatform("xiaohongshu")
+			.map((pack) => templateCompiler.compile(pack, "xiaohongshu"));
 	}
 
 	async format(

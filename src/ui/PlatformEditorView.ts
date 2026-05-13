@@ -8,6 +8,8 @@ import {
 } from "obsidian";
 import { parseFrontmatter } from "@/core/utils";
 import type { PlatformAdapter, Template } from "@/platforms/base";
+import type { PlatformId } from "@/core/templates";
+import { getAvailablePacksForPlatform, compilePackForPlatform } from "@/core/templates";
 import type SpiderMediaPlugin from "@/main";
 
 export const VIEW_TYPE_SPIDER_MEDIA = "spider-media-view";
@@ -38,7 +40,7 @@ export class PlatformEditorView extends ItemView {
 	constructor(leaf: WorkspaceLeaf, private plugin: SpiderMediaPlugin) {
 		super(leaf);
 		this.activePlatformId = plugin.settings.defaultPlatform;
-		this.activeTemplateId = plugin.settings.wechat.defaultTemplateId;
+		this.activeTemplateId = plugin.settings.templates.defaultPackId;
 		this.renderPreview = debounce(() => void this.refreshPreview(), 350, true);
 	}
 
@@ -94,6 +96,8 @@ export class PlatformEditorView extends ItemView {
 		}
 		this.platformSelectEl.addEventListener("change", () => {
 			this.activePlatformId = this.platformSelectEl.value;
+			this.plugin.settings.defaultPlatform = this.activePlatformId;
+			void this.plugin.saveSettings();
 			this.populateTemplates();
 			this.renderPreview();
 		});
@@ -102,6 +106,8 @@ export class PlatformEditorView extends ItemView {
 		this.templateSelectEl = toolbar.createEl("select", { cls: "sm-select" });
 		this.templateSelectEl.addEventListener("change", () => {
 			this.activeTemplateId = this.templateSelectEl.value;
+			this.plugin.settings.templates.defaultPackId = this.activeTemplateId;
+			void this.plugin.saveSettings();
 			this.renderPreview();
 		});
 
@@ -131,18 +137,21 @@ export class PlatformEditorView extends ItemView {
 	}
 
 	private populateTemplates(): void {
-		const adapter = this.getActiveAdapter();
 		this.templateSelectEl.empty();
-		const templates = adapter.getTemplates();
-		for (const tpl of templates) {
+		const packs = getAvailablePacksForPlatform(
+			this.activePlatformId,
+			this.plugin.settings.templates.userPacks,
+		);
+		for (const pack of packs) {
+			const label = pack.source === "user" ? `${pack.name} (U)` : pack.name;
 			const opt = this.templateSelectEl.createEl("option", {
-				text: tpl.name,
-				value: tpl.id,
+				text: label,
+				value: pack.id,
 			});
-			if (tpl.id === this.activeTemplateId) opt.selected = true;
+			if (pack.id === this.activeTemplateId) opt.selected = true;
 		}
-		if (!templates.some((t) => t.id === this.activeTemplateId) && templates.length > 0) {
-			this.activeTemplateId = templates[0].id;
+		if (!packs.some((p) => p.id === this.activeTemplateId) && packs.length > 0) {
+			this.activeTemplateId = packs[0].id;
 			this.templateSelectEl.value = this.activeTemplateId;
 		}
 	}
@@ -158,9 +167,23 @@ export class PlatformEditorView extends ItemView {
 		return adapter;
 	}
 
-	private getActiveTemplate(adapter: PlatformAdapter): Template {
-		const list = adapter.getTemplates();
-		return list.find((t) => t.id === this.activeTemplateId) ?? list[0];
+	private getActiveTemplate(_adapter: PlatformAdapter): Template {
+		const compiled = compilePackForPlatform(
+			this.activeTemplateId,
+			this.activePlatformId as PlatformId,
+			this.plugin.settings.templates.userPacks,
+		);
+		if (compiled) return compiled;
+		// Fallback: first available pack
+		const packs = getAvailablePacksForPlatform(
+			this.activePlatformId,
+			this.plugin.settings.templates.userPacks,
+		);
+		if (packs.length > 0) {
+			this.activeTemplateId = packs[0].id;
+			return compilePackForPlatform(packs[0].id, this.activePlatformId as PlatformId, this.plugin.settings.templates.userPacks)!;
+		}
+		throw new Error("没有可用的模板");
 	}
 
 	async loadActiveFile(): Promise<void> {

@@ -11,6 +11,7 @@ import { WeChatBrowserView, VIEW_TYPE_WECHAT_BROWSER } from "@/ui/WeChatBrowserV
 import { ToutiaoBrowserView, VIEW_TYPE_TOUTIAO_BROWSER } from "@/ui/ToutiaoBrowserView";
 import { ZhihuBrowserView, VIEW_TYPE_ZHIHU_BROWSER } from "@/ui/ZhihuBrowserView";
 import { XiaohongshuBrowserView, VIEW_TYPE_XIAOHONGSHU_BROWSER } from "@/ui/XiaohongshuBrowserView";
+import { TemplateManagerModal } from "@/ui/TemplateManagerModal";
 
 /**
  * 自定义 Spider Media ribbon 图标。
@@ -116,6 +117,14 @@ export default class SpiderMediaPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "open-template-manager",
+			name: "打开样式模板管理器",
+			callback: () => {
+				new TemplateManagerModal(this.app, this).open();
+			},
+		});
+
 		this.addSettingTab(new SpiderMediaSettingTab(this.app, this));
 	}
 
@@ -137,6 +146,11 @@ export default class SpiderMediaPlugin extends Plugin {
 			zhihu: { ...DEFAULT_SETTINGS.zhihu, ...(data?.zhihu ?? {}) },
 			xiaohongshu: { ...DEFAULT_SETTINGS.xiaohongshu, ...(data?.xiaohongshu ?? {}) },
 		};
+		// 迁移：旧版本没有 templates 字段 → 从 wechat.defaultTemplateId 继承
+		if (data && !data.templates) {
+			this.settings.templates.defaultPackId =
+				this.settings.wechat.defaultTemplateId || DEFAULT_SETTINGS.templates.defaultPackId;
+		}
 	}
 
 	async saveSettings(): Promise<void> {

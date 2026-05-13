@@ -2,6 +2,8 @@ import { ImageManager } from "@/core/ImageManager";
 import { MarkdownParser } from "@/core/MarkdownParser";
 import { MermaidConverter } from "@/core/MermaidConverter";
 import { PostProcessor } from "@/core/PostProcessor";
+import { templateCompiler } from "@/core/templates";
+import { getBuiltinPacksForPlatform } from "@/core/templates/builtinPacks";
 import {
 	PlatformAdapter,
 	type Credentials,
@@ -12,7 +14,6 @@ import {
 	type Template,
 } from "@/platforms/base";
 import { WeChatFormatter } from "./formatter";
-import { WECHAT_TEMPLATES } from "./templates";
 
 export interface WeChatAdapterOptions {
 	context: PlatformContext;
@@ -45,7 +46,8 @@ export class WeChatAdapter extends PlatformAdapter {
 	}
 
 	getTemplates(): Template[] {
-		return WECHAT_TEMPLATES;
+		return getBuiltinPacksForPlatform("wechat")
+			.map((pack) => templateCompiler.compile(pack, "wechat"));
 	}
 
 	async format(

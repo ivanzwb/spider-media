@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type SpiderMediaPlugin from "@/main";
+import { TemplateManagerModal } from "@/ui/TemplateManagerModal";
 
 export class SpiderMediaSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: SpiderMediaPlugin) {
@@ -68,6 +69,17 @@ export class SpiderMediaSettingTab extends PluginSettingTab {
 			.setName("发布方式")
 			.setDesc(
 				"内嵌 Electron webview 登录创作中心，命令面板执行「打开嵌入式小红书浏览器」即可。注意：小红书编辑器不支持 HTML，正文会自动转为纯文本，图片需手动上传。",
+			);
+
+		new Setting(containerEl).setName("模板管理").setHeading();
+
+		new Setting(containerEl)
+			.setName("管理样式模板")
+			.setDesc("创建、编辑、导入或导出样式模板")
+			.addButton((btn) =>
+				btn.setButtonText("打开模板管理器").onClick(() => {
+					new TemplateManagerModal(this.app, this.plugin).open();
+				}),
 			);
 
 		new Setting(containerEl).setName("默认排版参数").setHeading();

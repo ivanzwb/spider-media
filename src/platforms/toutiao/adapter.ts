@@ -2,6 +2,8 @@ import { ImageManager } from "@/core/ImageManager";
 import { MarkdownParser } from "@/core/MarkdownParser";
 import { MermaidConverter } from "@/core/MermaidConverter";
 import { PostProcessor } from "@/core/PostProcessor";
+import { templateCompiler } from "@/core/templates";
+import { getBuiltinPacksForPlatform } from "@/core/templates/builtinPacks";
 import {
 	PlatformAdapter,
 	type Credentials,
@@ -12,7 +14,6 @@ import {
 	type Template,
 } from "@/platforms/base";
 import { ToutiaoFormatter } from "./formatter";
-import { TOUTIAO_TEMPLATES } from "./templates";
 
 export interface ToutiaoAdapterOptions {
 	context: PlatformContext;
@@ -43,7 +44,8 @@ export class ToutiaoAdapter extends PlatformAdapter {
 	}
 
 	getTemplates(): Template[] {
-		return TOUTIAO_TEMPLATES;
+		return getBuiltinPacksForPlatform("toutiao")
+			.map((pack) => templateCompiler.compile(pack, "toutiao"));
 	}
 
 	async format(
