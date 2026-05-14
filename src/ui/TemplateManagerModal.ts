@@ -253,32 +253,54 @@ export class TemplateManagerModal extends Modal {
 		// Open a Setting for each token
 		const tokens = pack.tokens;
 
-		new Setting(this.editorEl)
+		const themeColorSetting = new Setting(this.editorEl)
 			.setName("主题色")
-			.addText((text) =>
-				text
+			.addColorPicker((cp) =>
+				cp
 					.setValue(tokens.themeColor)
-					.setPlaceholder("#07C160")
 					.onChange(async (v) => {
-						this.updateTokens(pack.id, { themeColor: v || DEFAULT_TEMPLATE_TOKENS.themeColor });
+						const val = v || DEFAULT_TEMPLATE_TOKENS.themeColor;
+						this.updateTokens(pack.id, { themeColor: val });
+						themeColorSetting.nameEl.style.color = val;
 					}),
 			);
+		themeColorSetting.nameEl.style.color = tokens.themeColor;
 
-		new Setting(this.editorEl)
+		const headingSetting = new Setting(this.editorEl)
 			.setName("标题装饰")
 			.addDropdown((dd) =>
 				dd
-					.addOption("template", "极简")
+					.addOption("template", "极简 · 无装饰")
 					.addOption("underline", "下划线")
 					.addOption("bordered", "描边胶囊")
 					.addOption("numbered", "左竖条 + 渐变")
 					.setValue(tokens.headingStyle)
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { headingStyle: v as typeof tokens.headingStyle });
+						applyHeadingPreview(headingSetting.nameEl, v, tokens.themeColor);
 					}),
 			);
+		const applyHeadingPreview = (el: HTMLElement, style: string, accent: string) => {
+			el.style.textDecoration = "none";
+			el.style.border = "none";
+			el.style.padding = "0";
+			el.style.borderLeft = "none";
+			el.style.borderRadius = "";
+			if (style === "underline") {
+				el.style.textDecoration = "underline";
+				el.style.textUnderlineOffset = "3px";
+			} else if (style === "bordered") {
+				el.style.border = `1px solid ${accent}`;
+				el.style.borderRadius = "4px";
+				el.style.padding = "1px 6px";
+			} else if (style === "numbered") {
+				el.style.borderLeft = `3px solid ${accent}`;
+				el.style.paddingLeft = "8px";
+			}
+		};
+		applyHeadingPreview(headingSetting.nameEl, tokens.headingStyle, tokens.themeColor);
 
-		new Setting(this.editorEl)
+		const bodyFontSetting = new Setting(this.editorEl)
 			.setName("正文字体")
 			.addDropdown((dd) =>
 				dd
@@ -288,10 +310,20 @@ export class TemplateManagerModal extends Modal {
 					.setValue(tokens.bodyFont)
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { bodyFont: v as BodyFont });
+						applyBodyFontPreview(bodyFontSetting.nameEl, v);
 					}),
 			);
+		const applyBodyFontPreview = (el: HTMLElement, font: string) => {
+			el.style.fontFamily = "";
+			if (font === "serif") {
+				el.style.fontFamily = '"Songti SC", "SimSun", "Noto Serif CJK SC", serif';
+			} else if (font === "sans") {
+				el.style.fontFamily = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif';
+			}
+		};
+		applyBodyFontPreview(bodyFontSetting.nameEl, tokens.bodyFont);
 
-		new Setting(this.editorEl)
+		const fontSizeSetting = new Setting(this.editorEl)
 			.setName("字号 (px)")
 			.addSlider((sl) =>
 				sl
@@ -300,10 +332,12 @@ export class TemplateManagerModal extends Modal {
 					.setDynamicTooltip()
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { fontSize: v });
+						fontSizeSetting.nameEl.style.fontSize = `${v}px`;
 					}),
 			);
+		fontSizeSetting.nameEl.style.fontSize = `${tokens.fontSize}px`;
 
-		new Setting(this.editorEl)
+		const lineHeightSetting = new Setting(this.editorEl)
 			.setName("行高")
 			.addSlider((sl) =>
 				sl
@@ -312,10 +346,12 @@ export class TemplateManagerModal extends Modal {
 					.setDynamicTooltip()
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { lineHeight: v });
+						lineHeightSetting.nameEl.style.lineHeight = String(v);
 					}),
 			);
+		lineHeightSetting.nameEl.style.lineHeight = String(tokens.lineHeight);
 
-		new Setting(this.editorEl)
+		const codeThemeSetting = new Setting(this.editorEl)
 			.setName("代码块配色")
 			.addDropdown((dd) =>
 				dd
@@ -327,10 +363,26 @@ export class TemplateManagerModal extends Modal {
 					.setValue(tokens.codeTheme)
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { codeTheme: v as TemplateCodeTheme });
+						applyCodePreview(codeThemeSetting.nameEl, v);
 					}),
 			);
+		const applyCodePreview = (el: HTMLElement, theme: string) => {
+			const themes: Record<string, [string, string]> = {
+				"atom-one-dark": ["#282c34", "#abb2bf"],
+				"github": ["#f6f8fa", "#1f2328"],
+				"github-dark": ["#0d1117", "#e6edf3"],
+				"dracula": ["#282a36", "#f8f8f2"],
+				"light": ["#fafafa", "#333333"],
+			};
+			const [bg, fg] = themes[theme] ?? ["transparent", ""];
+			el.style.background = bg;
+			el.style.color = fg;
+			el.style.padding = "1px 6px";
+			el.style.borderRadius = "3px";
+		};
+		applyCodePreview(codeThemeSetting.nameEl, tokens.codeTheme);
 
-		new Setting(this.editorEl)
+		const blockquoteSetting = new Setting(this.editorEl)
 			.setName("引用样式")
 			.addDropdown((dd) =>
 				dd
@@ -340,22 +392,40 @@ export class TemplateManagerModal extends Modal {
 					.setValue(tokens.blockquoteStyle)
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { blockquoteStyle: v as BlockquoteStyle });
+						applyQuotePreview(blockquoteSetting.nameEl, v, tokens.themeColor);
 					}),
 			);
+		const applyQuotePreview = (el: HTMLElement, style: string, accent: string) => {
+			el.style.borderLeft = "none";
+			el.style.background = "transparent";
+			el.style.padding = "0";
+			el.style.borderRadius = "";
+			if (style === "card") {
+				el.style.borderLeft = `3px solid ${accent}`;
+				el.style.background = "var(--background-modifier-hover)";
+				el.style.padding = "2px 8px";
+				el.style.borderRadius = "0 4px 4px 0";
+			} else if (style === "border-left") {
+				el.style.borderLeft = `3px solid ${accent}`;
+				el.style.paddingLeft = "8px";
+			}
+		};
+		applyQuotePreview(blockquoteSetting.nameEl, tokens.blockquoteStyle, tokens.themeColor);
 
-		new Setting(this.editorEl)
+		const linkColorSetting = new Setting(this.editorEl)
 			.setName("链接颜色")
-			.setDesc("留空则跟随主题色")
-			.addText((text) =>
-				text
-					.setValue(tokens.linkColor)
-					.setPlaceholder("跟随主题色")
+			.setDesc("跟随主题色时取色与主题色一致即可")
+			.addColorPicker((cp) =>
+				cp
+					.setValue(tokens.linkColor || tokens.themeColor)
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { linkColor: v });
+						linkColorSetting.nameEl.style.color = v || tokens.themeColor;
 					}),
 			);
+		linkColorSetting.nameEl.style.color = tokens.linkColor || tokens.themeColor;
 
-		new Setting(this.editorEl)
+		const spacingSetting = new Setting(this.editorEl)
 			.setName("间距")
 			.addDropdown((dd) =>
 				dd
@@ -365,8 +435,14 @@ export class TemplateManagerModal extends Modal {
 					.setValue(tokens.spacing)
 					.onChange(async (v) => {
 						this.updateTokens(pack.id, { spacing: v as Spacing });
+						applySpacingPreview(spacingSetting.settingEl, v);
 					}),
 			);
+		const applySpacingPreview = (el: HTMLElement, spacing: string) => {
+			const margins: Record<string, string> = { compact: "2px", normal: "", loose: "14px" };
+			el.style.marginBottom = margins[spacing] ?? "";
+		};
+		applySpacingPreview(spacingSetting.settingEl, tokens.spacing);
 
 		// 内联预览提示
 		this.editorEl.createEl("hr");

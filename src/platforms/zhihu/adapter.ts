@@ -18,7 +18,6 @@ import { ZhihuFormatter } from "./formatter";
 export interface ZhihuAdapterOptions {
 	context: PlatformContext;
 	noteDir: string;
-	imageInlineThresholdKB?: number;
 }
 
 export class ZhihuAdapter extends PlatformAdapter {
@@ -38,7 +37,6 @@ export class ZhihuAdapter extends PlatformAdapter {
 	constructor(private options: ZhihuAdapterOptions) {
 		super();
 		this.images = new ImageManager(options.context.vault, {
-			inlineThresholdKB: options.imageInlineThresholdKB ?? 100,
 			noteDir: options.noteDir,
 		});
 	}
@@ -86,7 +84,6 @@ export class ZhihuAdapter extends PlatformAdapter {
 	setNoteDir(dir: string): void {
 		this.options.noteDir = dir;
 		this.images = new ImageManager(this.options.context.vault, {
-			inlineThresholdKB: this.options.imageInlineThresholdKB ?? 100,
 			noteDir: dir,
 		});
 	}

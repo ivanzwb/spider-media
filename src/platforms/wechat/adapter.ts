@@ -19,8 +19,6 @@ export interface WeChatAdapterOptions {
 	context: PlatformContext;
 	/** 当前笔记目录 (用于解析图片相对路径) */
 	noteDir: string;
-	/** 小图内嵌阈值 KB */
-	imageInlineThresholdKB?: number;
 }
 
 export class WeChatAdapter extends PlatformAdapter {
@@ -40,7 +38,6 @@ export class WeChatAdapter extends PlatformAdapter {
 	constructor(private options: WeChatAdapterOptions) {
 		super();
 		this.images = new ImageManager(options.context.vault, {
-			inlineThresholdKB: options.imageInlineThresholdKB ?? 100,
 			noteDir: options.noteDir,
 		});
 	}
@@ -90,7 +87,6 @@ export class WeChatAdapter extends PlatformAdapter {
 	setNoteDir(dir: string): void {
 		this.options.noteDir = dir;
 		this.images = new ImageManager(this.options.context.vault, {
-			inlineThresholdKB: this.options.imageInlineThresholdKB ?? 100,
 			noteDir: dir,
 		});
 	}

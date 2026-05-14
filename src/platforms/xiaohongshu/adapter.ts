@@ -18,7 +18,6 @@ import { XiaohongshuFormatter } from "./formatter";
 export interface XiaohongshuAdapterOptions {
 	context: PlatformContext;
 	noteDir: string;
-	imageInlineThresholdKB?: number;
 }
 
 export class XiaohongshuAdapter extends PlatformAdapter {
@@ -38,7 +37,6 @@ export class XiaohongshuAdapter extends PlatformAdapter {
 	constructor(private options: XiaohongshuAdapterOptions) {
 		super();
 		this.images = new ImageManager(options.context.vault, {
-			inlineThresholdKB: options.imageInlineThresholdKB ?? 100,
 			noteDir: options.noteDir,
 		});
 	}
@@ -86,7 +84,6 @@ export class XiaohongshuAdapter extends PlatformAdapter {
 	setNoteDir(dir: string): void {
 		this.options.noteDir = dir;
 		this.images = new ImageManager(this.options.context.vault, {
-			inlineThresholdKB: this.options.imageInlineThresholdKB ?? 100,
 			noteDir: dir,
 		});
 	}

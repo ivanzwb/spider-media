@@ -2,8 +2,6 @@ import type { Vault, TFile } from "obsidian";
 import { arrayBufferToBase64 } from "./utils";
 
 export interface ImageManagerOptions {
-	/** 小于此阈值 (KB) 的图片转 base64 内嵌 */
-	inlineThresholdKB: number;
 	/** vault 内当前笔记目录 (用于解析相对路径) */
 	noteDir: string;
 }

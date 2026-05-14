@@ -18,7 +18,6 @@ import { ToutiaoFormatter } from "./formatter";
 export interface ToutiaoAdapterOptions {
 	context: PlatformContext;
 	noteDir: string;
-	imageInlineThresholdKB?: number;
 }
 
 export class ToutiaoAdapter extends PlatformAdapter {
@@ -38,7 +37,6 @@ export class ToutiaoAdapter extends PlatformAdapter {
 	constructor(private options: ToutiaoAdapterOptions) {
 		super();
 		this.images = new ImageManager(options.context.vault, {
-			inlineThresholdKB: options.imageInlineThresholdKB ?? 100,
 			noteDir: options.noteDir,
 		});
 	}
@@ -86,7 +84,6 @@ export class ToutiaoAdapter extends PlatformAdapter {
 	setNoteDir(dir: string): void {
 		this.options.noteDir = dir;
 		this.images = new ImageManager(this.options.context.vault, {
-			inlineThresholdKB: this.options.imageInlineThresholdKB ?? 100,
 			noteDir: dir,
 		});
 	}

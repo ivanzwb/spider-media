@@ -141,16 +141,7 @@ export default class SpiderMediaPlugin extends Plugin {
 			...DEFAULT_SETTINGS,
 			...(data ?? {}),
 			tweaks: { ...DEFAULT_SETTINGS.tweaks, ...(data?.tweaks ?? {}) },
-			wechat: { ...DEFAULT_SETTINGS.wechat, ...(data?.wechat ?? {}) },
-			toutiao: { ...DEFAULT_SETTINGS.toutiao, ...(data?.toutiao ?? {}) },
-			zhihu: { ...DEFAULT_SETTINGS.zhihu, ...(data?.zhihu ?? {}) },
-			xiaohongshu: { ...DEFAULT_SETTINGS.xiaohongshu, ...(data?.xiaohongshu ?? {}) },
 		};
-		// 迁移：旧版本没有 templates 字段 → 从 wechat.defaultTemplateId 继承
-		if (data && !data.templates) {
-			this.settings.templates.defaultPackId =
-				this.settings.wechat.defaultTemplateId || DEFAULT_SETTINGS.templates.defaultPackId;
-		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -169,28 +160,24 @@ export default class SpiderMediaPlugin extends Plugin {
 		const wechat = new WeChatAdapter({
 			context: { vault: this.app.vault },
 			noteDir: "",
-			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
 		});
 		this.platforms.set(wechat.meta.id, wechat);
 
 		const toutiao = new ToutiaoAdapter({
 			context: { vault: this.app.vault },
 			noteDir: "",
-			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
 		});
 		this.platforms.set(toutiao.meta.id, toutiao);
 
 		const zhihu = new ZhihuAdapter({
 			context: { vault: this.app.vault },
 			noteDir: "",
-			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
 		});
 		this.platforms.set(zhihu.meta.id, zhihu);
 
 		const xiaohongshu = new XiaohongshuAdapter({
 			context: { vault: this.app.vault },
 			noteDir: "",
-			imageInlineThresholdKB: this.settings.imageInlineThresholdKB,
 		});
 		this.platforms.set(xiaohongshu.meta.id, xiaohongshu);
 	}

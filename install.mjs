@@ -59,16 +59,12 @@ function resolveVault() {
 }
 
 function ensureBuild() {
-	const missing = ARTIFACTS.filter((f) => !existsSync(join(DIST, f)));
-	if (missing.length === 0) {
-		info("dist/ 已存在，跳过构建");
-		return;
-	}
-	info(`dist/ 缺少 [${missing.join(", ")}]，开始构建...`);
+	info("开始构建...");
 	const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-	const r = spawnSync(npm, ["run", "build"], {
+	const r = spawnSync(`${npm} run build`, [], {
 		cwd: ROOT,
 		stdio: "inherit",
+		shell: true,
 	});
 	if (r.status !== 0) fail(`npm run build 失败 (exit ${r.status})`);
 }
