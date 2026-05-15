@@ -2,29 +2,6 @@ import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 
 import type SpiderMediaPlugin from "../main";
 
-// Node / Electron 接口（无 @types/node，故用 require 取并窄类型化）
-interface FsPromisesLike {
-	mkdir(p: string, opts: { recursive: boolean }): Promise<void>;
-	writeFile(p: string, data: Uint8Array): Promise<void>;
-}
-interface NodeBufferStatic {
-	from(input: string, encoding: string): Uint8Array;
-}
-interface ElectronNativeImageLike { __brand: "NativeImage" }
-interface ElectronModule {
-	clipboard: { writeImage(img: ElectronNativeImageLike): void };
-	nativeImage: { createFromDataURL(dataUrl: string): ElectronNativeImageLike };
-}
-const nodeRequire =
-	typeof window !== "undefined" && typeof (window as unknown as { require?: unknown }).require === "function"
-		? ((window as unknown as { require: (m: string) => unknown }).require)
-		: null;
-const fsPromises = (nodeRequire?.("fs") as { promises?: FsPromisesLike } | undefined)?.promises;
-const osMod = nodeRequire?.("os") as { tmpdir(): string } | undefined;
-const pathMod = nodeRequire?.("path") as { join(...parts: string[]): string } | undefined;
-const BufferCtor = (window as unknown as { Buffer?: NodeBufferStatic }).Buffer;
-const electronMod = nodeRequire?.("electron") as ElectronModule | undefined;
-
 export const VIEW_TYPE_XIAOHONGSHU_BROWSER = "spider-media-xiaohongshu-browser";
 
 interface WebviewElement extends HTMLElement {
@@ -37,7 +14,6 @@ interface WebviewElement extends HTMLElement {
 	reload(): void;
 	openDevTools(): void;
 	focus(): void;
-	sendInputEvent(event: Record<string, unknown>): void;
 }
 
 interface InjectionPayload {
@@ -51,8 +27,8 @@ interface InjectionResult {
 }
 
 const XIAOHONGSHU_HOME = "https://creator.xiaohongshu.com/";
-// 注：小红书强制重定向 target=image → target=article。我们接受落在长文编辑器，
-// 然后用系统级 Ctrl+V 把代码块图片粘贴进 ProseMirror 编辑器（iframe 内）。
+// 小红书强制把发布页重定向为长文（target=article）。我们只在长文编辑器做文字注入；
+// 代码块由 formatter 输出为 <pre><code>，注入时由 htmlToText 还原为带缩进的等宽段落。
 const XIAOHONGSHU_PUBLISH = "https://creator.xiaohongshu.com/publish/publish?source=official";
 const XIAOHONGSHU_PARTITION = "persist:spider-media-xiaohongshu";
 
@@ -160,30 +136,12 @@ export class XiaohongshuBrowserView extends ItemView {
 		}
 		const { title, html } = this.pending;
 
-		// 抽取代码块图片：保存到磁盘 + 自动上传。
-		const dataUrls = this.extractCodeImageDataUrls(html);
-		await this.dumpCodeBlockImagesToDisk(dataUrls);
-
-		// 小红书的发布 UI（无论图文还是长文）都渲染在跨源 iframe 内，DOM 级 file input / drop
-		// 都无法直达。统一用系统级 Ctrl+V：把图片写入剪贴板，再用 sendInputEvent 发键盘事件，
-		// 这是唯一能穿透跨源 iframe 的方式（被编辑器的 paste 监听器接住）。
-		let autoUploaded = 0;
-		if (dataUrls.length > 0) {
-			this.setStatus(`正在自动粘贴 ${dataUrls.length} 张代码图（系统级 Ctrl+V）…`);
-			autoUploaded = await this.pasteImagesViaKeyboard(dataUrls);
-		}
-
 		const code = this.buildInjectionCode(title, html);
 		try {
 			const result = (await this.webview.executeJavaScript(code, true)) as InjectionResult;
 			if (result?.ok) {
-				const imgMsg = dataUrls.length === 0
-					? ""
-					: autoUploaded === dataUrls.length
-						? `；已自动上传 ${autoUploaded} 张代码图`
-						: `；自动上传 ${autoUploaded}/${dataUrls.length} 张代码图（其余可在编辑器中 Ctrl+V 或从临时目录拖入）`;
-				this.setStatus(`✅ 已注入文字内容${imgMsg}`);
-				new Notice(`内容已注入小红书编辑器${imgMsg}`);
+				this.setStatus("✅ 已注入文字内容");
+				new Notice("内容已注入小红书编辑器");
 			} else {
 				this.setStatus(`❌ 注入失败：${result?.msg ?? "未知错误"}`);
 				new Notice(`注入失败：${result?.msg ?? ""}`);
@@ -193,121 +151,6 @@ export class XiaohongshuBrowserView extends ItemView {
 			this.setStatus(`❌ 执行脚本失败：${msg}`);
 			new Notice(`执行脚本失败：${msg}`);
 		}
-	}
-
-	/** 提取 HTML 中所有代码块图片的 dataURL（按顺序） */
-	private extractCodeImageDataUrls(html: string): string[] {
-		const re = /<img[^>]*data-codeblock-img="1"[^>]*src="(data:image\/(?:png|jpeg);base64,[^"]+)"/g;
-		const urls: string[] = [];
-		for (const m of html.matchAll(re)) urls.push(m[1]);
-		return urls;
-	}
-
-	/**
-	 * 长文编辑器专用：用系统级 Ctrl+V 把图片粘贴进 iframe 内的 ProseMirror。
-	 *   1. 用 sendInputEvent 在 iframe 中心位置模拟鼠标点击，让编辑器获取焦点
-	 *   2. 每张图：Electron clipboard.writeImage 写系统剪贴板
-	 *   3. sendInputEvent 发 Ctrl+V（系统级事件穿透 iframe 跨域限制）
-	 *   4. 等待 XHS 上传完成
-	 *
-	 * 返回成功粘贴的图片数量。
-	 */
-	private async pasteImagesViaKeyboard(dataUrls: string[]): Promise<number> {
-		if (dataUrls.length === 0) return 0;
-		if (!electronMod) {
-			this.setStatus("Electron 模块不可用，无法自动粘贴；请手动 Ctrl+V");
-			return 0;
-		}
-
-		// 1. 找 iframe 中心点，让编辑器获取焦点
-		let clickX = 400;
-		let clickY = 500;
-		try {
-			const coords = (await this.webview.executeJavaScript(
-				`(() => {
-  const ifr = document.querySelector('iframe');
-  if (!ifr) return null;
-  const r = ifr.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.55) };
-})();`,
-				false,
-			)) as { x: number; y: number } | null;
-			if (coords) {
-				clickX = coords.x;
-				clickY = coords.y;
-			}
-		} catch (err) {
-			console.warn("[spider-media] 获取 iframe 坐标失败", err);
-		}
-
-		this.webview.focus();
-		try {
-			this.webview.sendInputEvent({ type: "mouseDown", x: clickX, y: clickY, button: "left", clickCount: 1 });
-			this.webview.sendInputEvent({ type: "mouseUp", x: clickX, y: clickY, button: "left", clickCount: 1 });
-		} catch (err) {
-			console.warn("[spider-media] 模拟点击失败", err);
-		}
-		await new Promise((r) => window.setTimeout(r, 600));
-
-		let uploaded = 0;
-		for (let i = 0; i < dataUrls.length; i++) {
-			try {
-				const img = electronMod.nativeImage.createFromDataURL(dataUrls[i]);
-				electronMod.clipboard.writeImage(img);
-			} catch (err) {
-				console.warn("[spider-media] 写剪贴板失败", err);
-				continue;
-			}
-			try {
-				this.webview.focus();
-				// 模拟 Ctrl+V：keyDown + char + keyUp，三段都带 control modifier
-				this.webview.sendInputEvent({ type: "keyDown", keyCode: "V", modifiers: ["control"] });
-				this.webview.sendInputEvent({ type: "char", keyCode: "V", modifiers: ["control"] });
-				this.webview.sendInputEvent({ type: "keyUp", keyCode: "V", modifiers: ["control"] });
-				uploaded++;
-				this.setStatus(`粘贴代码图 ${i + 1}/${dataUrls.length}…`);
-			} catch (err) {
-				console.warn("[spider-media] sendInputEvent 失败", err);
-			}
-			// 等待 XHS 上传 + Vue/ProseMirror 渲染
-			await new Promise((r) => window.setTimeout(r, 2500));
-		}
-		return uploaded;
-	}
-
-	/** 把 dataURL 数组写到 OS 临时目录（用户兜底） */
-	private async dumpCodeBlockImagesToDisk(dataUrls: string[]): Promise<string[]> {
-		if (dataUrls.length === 0) return [];
-		if (!fsPromises || !osMod || !pathMod || !BufferCtor) {
-			console.warn("[spider-media] Node fs/os/path/Buffer 不可用，跳过保存代码图");
-			return [];
-		}
-
-		const dir = pathMod.join(osMod.tmpdir(), "spider-media-xhs-code");
-		try {
-			await fsPromises.mkdir(dir, { recursive: true });
-		} catch (err) {
-			console.warn("[spider-media] 无法创建临时目录", err);
-			return [];
-		}
-
-		const saved: string[] = [];
-		const stamp = Date.now();
-		for (let i = 0; i < dataUrls.length; i++) {
-			const match = /^data:image\/(png|jpeg);base64,(.+)$/.exec(dataUrls[i]);
-			if (!match) continue;
-			const ext = match[1];
-			const buf = BufferCtor.from(match[2], "base64");
-			const file = pathMod.join(dir, `code-${stamp}-${i + 1}.${ext}`);
-			try {
-				await fsPromises.writeFile(file, buf);
-				saved.push(file);
-			} catch (err) {
-				console.warn("[spider-media] 写入代码图失败", err);
-			}
-		}
-
-		return saved;
 	}
 
 	/**
@@ -340,9 +183,8 @@ export class XiaohongshuBrowserView extends ItemView {
     try {
       const doc = new DOMParser().parseFromString(src, "text/html");
       const lines = [];
-      let codeImgCounter = 0;
 
-      // 收集块级元素的"行内内容"为单行字符串（保留 <br> 换行 / <img> 占位）。
+      // 收集块级元素的“行内内容”为单行字符串（保留 <br> 换行 / <img> 占位）。
       // 这样 <p>Hello <strong>world</strong>!</p> 输出 "Hello world!" 而不是被拆成 3 行。
       const getInlineText = (node) => {
         if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
@@ -350,11 +192,6 @@ export class XiaohongshuBrowserView extends ItemView {
         const tag = node.tagName.toLowerCase();
         if (tag === "br") return "\\n";
         if (tag === "img") {
-          // 代码块图片占位：实际图片通过文件上传，这里只放序号标记
-          if (node.getAttribute("data-codeblock-img") === "1") {
-            codeImgCounter++;
-            return "[代码图片 " + codeImgCounter + "]";
-          }
           const alt = node.getAttribute("alt") || "";
           return "[图片" + (alt ? "：" + alt : "") + "]";
         }
@@ -381,11 +218,6 @@ export class XiaohongshuBrowserView extends ItemView {
         if (tag === "br") { lines.push(""); return; }
         if (tag === "hr") { lines.push("———"); return; }
         if (tag === "img") {
-          if (node.getAttribute("data-codeblock-img") === "1") {
-            codeImgCounter++;
-            lines.push("[代码图片 " + codeImgCounter + "]");
-            return;
-          }
           const alt = node.getAttribute("alt") || "";
           lines.push("[图片" + (alt ? "：" + alt : "") + "]");
           return;

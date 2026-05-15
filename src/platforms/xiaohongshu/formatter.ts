@@ -29,12 +29,11 @@ export class XiaohongshuFormatter {
 						return `<blockquote>${body}</blockquote>\n`;
 					},
 					code({ text, lang }) {
-						// 小红书编辑器是受控 textarea / contenteditable，不支持代码块结构。
-						// 这里输出占位符，由 CodeBlockImageRenderer 在 adapter.format() 中
-						// 替换为 PNG 图片，再由 BrowserView 注入时上传到笔记图片区。
-						const encodedCode = encodeURIComponent(text);
-						const langAttr = lang ? ` data-lang="${encodeURIComponent(lang)}"` : "";
-						return `<div class="mp-codeblock" data-code="${encodedCode}"${langAttr}></div>\n`;
+						// 小红书长文编辑器在跨域 iframe 内，外部无法把图片注入到 ProseMirror。
+						// 因此代码块降级为带语言标签的等宽预格式文本，由 htmlToText 在注入时
+						// 还原为带缩进的换行段落。
+						const langAttr = lang ? ` data-lang="${escapeHtml(lang)}"` : "";
+						return `<pre${langAttr}><code>${escapeHtml(text)}</code></pre>\n`;
 					},
 					codespan({ text }) {
 						return `<code>${escapeHtml(text)}</code>`;
