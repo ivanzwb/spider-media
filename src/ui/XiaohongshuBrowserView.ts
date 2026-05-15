@@ -162,18 +162,28 @@ export class XiaohongshuBrowserView extends ItemView {
 
 		const { title, html } = this.pending;
 
-		// 先把代码块图片保存到磁盘 + 写入剪贴板，方便用户在编辑器中 Ctrl+V 粘贴。
-		const codeImgPaths = await this.dumpCodeBlockImages(html);
+		// 抽取代码块图片：保存到磁盘 + 自动逐张粘贴上传。
+		const dataUrls = this.extractCodeImageDataUrls(html);
+		await this.dumpCodeBlockImagesToDisk(dataUrls);
+
+		// 先尝试自动上传代码图（写剪贴板 → 在 webview 触发 paste）
+		let autoUploaded = 0;
+		if (dataUrls.length > 0 && electronMod) {
+			this.setStatus(`正在自动上传 ${dataUrls.length} 张代码图…`);
+			autoUploaded = await this.autoPasteImages(dataUrls);
+		}
 
 		const code = this.buildInjectionCode(title, html);
 		try {
 			const result = (await this.webview.executeJavaScript(code, true)) as InjectionResult;
 			if (result?.ok) {
-				const extra = codeImgPaths.length > 0
-					? `；已复制第 1 张代码图到剪贴板，请在编辑器中 Ctrl+V 粘贴（共 ${codeImgPaths.length} 张，路径见控制台）`
-					: "";
-				this.setStatus(`✅ 已注入文字内容${extra}`);
-				new Notice(`内容已注入小红书编辑器${extra || "（图片需手动上传）"}`);
+				const imgMsg = dataUrls.length === 0
+					? ""
+					: autoUploaded === dataUrls.length
+						? `；已自动上传 ${autoUploaded} 张代码图`
+						: `；自动上传 ${autoUploaded}/${dataUrls.length} 张代码图（其余可在编辑器中 Ctrl+V 或从临时目录拖入）`;
+				this.setStatus(`✅ 已注入文字内容${imgMsg}`);
+				new Notice(`内容已注入小红书编辑器${imgMsg}`);
 			} else {
 				this.setStatus(`❌ 注入失败：${result?.msg ?? "未知错误"}`);
 				new Notice(`注入失败：${result?.msg ?? ""}`);
@@ -185,18 +195,97 @@ export class XiaohongshuBrowserView extends ItemView {
 		}
 	}
 
-	/**
-	 * 抽取 HTML 中所有 data-codeblock-img dataURL 图片：
-	 *   1. 保存为 PNG 到 OS 临时目录（spider-media-xhs-code/）
-	 *   2. 把第一张图片写入系统剪贴板（用户可在编辑器中 Ctrl+V）
-	 * 返回保存的文件路径数组（用于状态提示）。
-	 */
-	private async dumpCodeBlockImages(html: string): Promise<string[]> {
+	/** 提取 HTML 中所有代码块图片的 dataURL（按顺序） */
+	private extractCodeImageDataUrls(html: string): string[] {
 		const re = /<img[^>]*data-codeblock-img="1"[^>]*src="(data:image\/(?:png|jpeg);base64,[^"]+)"/g;
-		const dataUrls: string[] = [];
-		for (const m of html.matchAll(re)) dataUrls.push(m[1]);
-		if (dataUrls.length === 0) return [];
+		const urls: string[] = [];
+		for (const m of html.matchAll(re)) urls.push(m[1]);
+		return urls;
+	}
 
+	/**
+	 * 自动逐张粘贴：
+	 *   1. 把图片写入系统剪贴板（Electron nativeImage）
+	 *   2. 在 webview 内 focus 上传区 + execCommand('paste')，userGesture=true 授权
+	 *   3. 等待页面上传完成后再处理下一张
+	 *
+	 * 返回实际成功触发粘贴的图片数量。
+	 */
+	private async autoPasteImages(dataUrls: string[]): Promise<number> {
+		if (!electronMod) return 0;
+		// 先尝试切到"上传图文"tab + focus 上传区一次
+		try {
+			await this.webview.executeJavaScript(
+				`(() => {
+  const click = (text) => {
+    const all = document.querySelectorAll('button, span, div, a, [role="tab"]');
+    for (const el of all) {
+      const t = (el.textContent || '').trim();
+      if (t === text || t === text + ' ') { try { el.click(); return true; } catch (_) {} }
+    }
+    return false;
+  };
+  click('上传图文') || click('图文') || click('发布图文');
+})();`,
+				true,
+			);
+			await new Promise((r) => window.setTimeout(r, 800));
+		} catch {
+			// 忽略
+		}
+
+		let success = 0;
+		for (let i = 0; i < dataUrls.length; i++) {
+			try {
+				const img = electronMod.nativeImage.createFromDataURL(dataUrls[i]);
+				electronMod.clipboard.writeImage(img);
+			} catch (err) {
+				console.warn("[spider-media] 写剪贴板失败", err);
+				continue;
+			}
+			// 在 webview 内 focus 上传区并触发 paste。userGesture=true 让 execCommand('paste') 被授权。
+			try {
+				const pasteResult = (await this.webview.executeJavaScript(
+					`(() => {
+  const findUpload = () => {
+    const sels = ['[class*="upload"]', '[class*="drag"]', '[class*="drop"]', '.upload-container', '.upload-wrapper'];
+    for (const s of sels) {
+      const el = document.querySelector(s);
+      if (el) return el;
+    }
+    return document.body;
+  };
+  const target = findUpload();
+  try { target.focus && target.focus(); } catch (_) {}
+  try { target.click && target.click(); } catch (_) {}
+  let ok = false;
+  try { ok = document.execCommand('paste'); } catch (_) {}
+  // 兜底：直接派发 paste 事件（部分页面有 document 级 paste 监听）
+  if (!ok) {
+    try {
+      const ev = new Event('paste', { bubbles: true, cancelable: true });
+      target.dispatchEvent(ev);
+      ok = true;
+    } catch (_) {}
+  }
+  return { ok, tag: target.tagName, cls: (target.className || '').toString().slice(0, 80) };
+})();`,
+					true,
+				)) as { ok: boolean; tag: string; cls: string };
+				if (pasteResult?.ok) success++;
+				this.setStatus(`粘贴代码图 ${i + 1}/${dataUrls.length}…`);
+			} catch (err) {
+				console.warn("[spider-media] 执行 paste 失败", err);
+			}
+			// 等待上传完成（小红书图片上传 ~1.5-2.5s）
+			await new Promise((r) => window.setTimeout(r, 2000));
+		}
+		return success;
+	}
+
+	/** 把 dataURL 数组写到 OS 临时目录（用户兜底） */
+	private async dumpCodeBlockImagesToDisk(dataUrls: string[]): Promise<string[]> {
+		if (dataUrls.length === 0) return [];
 		if (!fsPromises || !osMod || !pathMod || !BufferCtor) {
 			console.warn("[spider-media] Node fs/os/path/Buffer 不可用，跳过保存代码图");
 			return [];
@@ -226,14 +315,6 @@ export class XiaohongshuBrowserView extends ItemView {
 			}
 		}
 
-		if (saved.length > 0 && electronMod) {
-			try {
-				const img = electronMod.nativeImage.createFromDataURL(dataUrls[0]);
-				electronMod.clipboard.writeImage(img);
-			} catch (err) {
-				console.warn("[spider-media] 写入剪贴板失败", err);
-			}
-		}
 		return saved;
 	}
 
