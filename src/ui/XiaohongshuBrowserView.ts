@@ -43,7 +43,8 @@ interface InjectionResult {
 }
 
 const XIAOHONGSHU_HOME = "https://creator.xiaohongshu.com/";
-const XIAOHONGSHU_PUBLISH = "https://creator.xiaohongshu.com/publish/publish?source=official";
+// 图文笔记发布入口（与「长文/article」不同；长文走 target=article，无标准 file input，只能粘贴）
+const XIAOHONGSHU_PUBLISH = "https://creator.xiaohongshu.com/publish/publish?source=official&target=image";
 const XIAOHONGSHU_PARTITION = "persist:spider-media-xiaohongshu";
 
 /**
@@ -139,13 +140,19 @@ export class XiaohongshuBrowserView extends ItemView {
 		}
 		await this.waitReady();
 		const url = this.webview.getURL();
-		if (!/creator\.xiaohongshu\.com\/publish/.test(url)) {
+		const onPublish = /creator\.xiaohongshu\.com\/publish/.test(url);
+		const onArticle = /target=article/.test(url);
+		if (!onPublish || onArticle) {
 			if (!navigateIfNeeded) {
-				this.setStatus("当前不在发布页面，请先点「发布笔记」");
+				this.setStatus(
+					onArticle
+						? "当前是「长文」编辑器，请切到「图文」（或点工具栏「发布笔记」重新进入）"
+						: "当前不在发布页面，请先点「发布笔记」",
+				);
 				return;
 			}
 			await this.webview.loadURL(XIAOHONGSHU_PUBLISH);
-			await new Promise((r) => window.setTimeout(r, 4000));
+			await new Promise((r) => window.setTimeout(r, 4500));
 		}
 
 		const { title, html } = this.pending;
@@ -244,11 +251,57 @@ export class XiaohongshuBrowserView extends ItemView {
       '.upload-input', '.upload-wrapper', '.upload-container', '.drag-over',
       '[class*="upload"]', '[class*="dropzone"]', '[class*="drag"]',
     ];
-    for (const s of sels) {
-      const el = document.querySelector(s);
-      if (el) return el;
+    const scan = (d) => {
+      for (const s of sels) {
+        try {
+          const el = d.querySelector(s);
+          if (el) return el;
+        } catch {}
+      }
+      return null;
+    };
+    let hit = scan(document);
+    if (hit) return hit;
+    for (let i = 0; i < window.frames.length; i++) {
+      try {
+        hit = scan(window.frames[i].document);
+        if (hit) return hit;
+      } catch {}
     }
     return null;
+  };
+
+  // 诊断：抓一次当前页面快照
+  const dumpDiagnostics = () => {
+    const info = {
+      url: location.href,
+      iframes: window.frames.length,
+      allInputs: document.querySelectorAll('input').length,
+      fileInputs: document.querySelectorAll('input[type="file"]').length,
+      uploadTexts: [],
+      classes: [],
+    };
+    const txt = ['上传图文', '上传视频', '上传', '图文'];
+    for (const t of txt) {
+      const found = Array.from(document.querySelectorAll('button, span, div, a'))
+        .filter((el) => (el.textContent || '').trim() === t).length;
+      if (found > 0) info.uploadTexts.push(t + '=' + found);
+    }
+    // 抓含 upload/drag/drop 字样的 class
+    const allEls = document.querySelectorAll('[class]');
+    const seen = new Set();
+    for (const el of allEls) {
+      const c = String(el.className || '');
+      for (const tok of c.split(/\\s+/)) {
+        if (/upload|drag|drop|file/i.test(tok) && !seen.has(tok)) {
+          seen.add(tok);
+          info.classes.push(tok);
+          if (info.classes.length >= 30) break;
+        }
+      }
+      if (info.classes.length >= 30) break;
+    }
+    return info;
   };
 
   let inputs = [];
@@ -261,9 +314,14 @@ export class XiaohongshuBrowserView extends ItemView {
     await sleep(400);
   }
   log('found inputs=' + inputs.length + ' zone=' + (zone ? (zone.className || zone.tagName) : 'null'));
+  if (inputs.length === 0 && !zone) {
+    log('diagnostics', JSON.stringify(dumpDiagnostics()));
+  }
 
   if (inputs.length === 0 && !zone) {
-    return { uploaded: 0, total: dataUrls.length, strategy: 'none', reason: '未找到上传 input 或拖拽区' };
+    // 没有上传 UI 也兜底尝试：在 document.body 派发 drop（部分页面在全局监听）
+    log('no upload UI detected, fallback dropping on document.body');
+    zone = document.body;
   }
 
   // 2. 把所有 dataURL 转 File，一次性灌入（小红书支持批量上传）。
