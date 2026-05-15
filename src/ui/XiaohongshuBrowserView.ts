@@ -446,11 +446,12 @@ export class XiaohongshuBrowserView extends ItemView {
     const doc = new DOMParser().parseFromString(HTML, "text/html");
     const imgs = Array.from(doc.querySelectorAll('img[data-codeblock-img="1"]'));
     if (imgs.length > 0) {
+      log("发现代码图片", imgs.length, "张，开始转 File");
       const files = [];
       for (let i = 0; i < imgs.length; i++) {
         const src = imgs[i].getAttribute("src") || "";
         const m = /^data:image\\/(png|jpeg);base64,(.+)$/.exec(src);
-        if (!m) continue;
+        if (!m) { log("跳过非 dataURL", src.slice(0, 40)); continue; }
         const mime = "image/" + m[1];
         const bin = atob(m[2]);
         const buf = new Uint8Array(bin.length);
@@ -458,49 +459,104 @@ export class XiaohongshuBrowserView extends ItemView {
         const blob = new Blob([buf], { type: mime });
         files.push(new File([blob], "code-block-" + (i + 1) + "." + m[1], { type: mime }));
       }
+      log("生成 File 数量", files.length);
 
-      // 找文件上传 input（图片）。小红书一般在 .upload-input 或 input[type=file]
-      const findFileInput = () => {
+      // 0. 先尝试切换到「图文」tab（如果当前在视频/直播 tab）
+      const tryClickTab = () => {
+        const sel = [
+          '.creator-tab',
+          '[class*="tab"]',
+          'button', 'span', 'div'
+        ];
+        const candidates = document.querySelectorAll(sel.join(','));
+        for (const el of candidates) {
+          const t = (el.textContent || '').trim();
+          if (t === '上传图文' || t === '图文' || t === '发布图文') {
+            try { el.click(); log("点击 tab", t); return true; } catch (_) {}
+          }
+        }
+        return false;
+      };
+      tryClickTab();
+      await sleep(500);
+
+      // 1. 找文件上传 input（图片）。
+      const findFileInputs = () => {
+        const results = [];
         const sels = [
           'input[type="file"][accept*="image"]',
+          'input[type="file"][multiple]',
           'input[type="file"]',
         ];
         const scan = (d) => {
           for (const s of sels) {
-            const el = d.querySelector(s);
-            if (el) return el;
+            const els = d.querySelectorAll(s);
+            for (const el of els) results.push(el);
           }
-          return null;
         };
-        let el = scan(document);
-        if (el) return el;
+        scan(document);
         for (let i = 0; i < window.frames.length; i++) {
-          try { el = scan(window.frames[i].document); if (el) return el; } catch (_) {}
+          try { scan(window.frames[i].document); } catch (_) {}
         }
-        return null;
+        return results;
       };
 
       // 等文件 input 出现（可能需要先打开上传区）
-      let fileInput = null;
-      const inputDeadline = Date.now() + 8000;
+      let fileInputs = [];
+      const inputDeadline = Date.now() + 15000;
       while (Date.now() < inputDeadline) {
-        fileInput = findFileInput();
-        if (fileInput) break;
-        await sleep(300);
+        fileInputs = findFileInputs();
+        if (fileInputs.length > 0) break;
+        await sleep(400);
       }
-      if (!fileInput) {
+      log("找到 file input 数量", fileInputs.length);
+
+      if (fileInputs.length === 0) {
         codeImgOk = false;
         codeImgDiag = "未找到文件上传 input，请手动上传 " + files.length + " 张代码图";
       } else {
-        try {
-          const dt = new DataTransfer();
-          for (const f of files) dt.items.add(f);
-          fileInput.files = dt.files;
-          fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-          codeImgDiag = "已提交 " + files.length + " 张代码图至上传组件";
-        } catch (e) {
+        let uploaded = false;
+        let lastErr = "";
+        for (const fileInput of fileInputs) {
+          try {
+            const dt = new DataTransfer();
+            for (const f of files) dt.items.add(f);
+            // 策略 A: 设置 input.files + change/input
+            try {
+              fileInput.files = dt.files;
+              fileInput.dispatchEvent(new Event("input", { bubbles: true }));
+              fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+              log("策略 A: 已写入 input.files", fileInput.outerHTML.slice(0, 120));
+            } catch (e1) {
+              lastErr = "A:" + (e1 && e1.message || e1);
+            }
+            // 策略 B: 在最近的上传容器上模拟 drop
+            try {
+              const dropZone =
+                fileInput.closest('[class*="upload"],[class*="drop"],[class*="drag"]') ||
+                fileInput.parentElement ||
+                fileInput;
+              const dt2 = new DataTransfer();
+              for (const f of files) dt2.items.add(f);
+              const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt2 });
+              const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt2 });
+              dropZone.dispatchEvent(dragOver);
+              dropZone.dispatchEvent(drop);
+              log("策略 B: drop 已派发到", dropZone.tagName, (dropZone.className || ""));
+            } catch (e2) {
+              lastErr = "B:" + (e2 && e2.message || e2);
+            }
+            uploaded = true;
+            break;
+          } catch (e) {
+            lastErr = (e && e.message || e);
+          }
+        }
+        if (uploaded) {
+          codeImgDiag = "已尝试上传 " + files.length + " 张代码图（请确认编辑器中已出现图片）";
+        } else {
           codeImgOk = false;
-          codeImgDiag = "上传失败: " + (e && e.message || e) + "，请手动上传 " + files.length + " 张代码图";
+          codeImgDiag = "上传失败: " + lastErr + "，请手动上传 " + files.length + " 张代码图";
         }
       }
     }
@@ -508,6 +564,14 @@ export class XiaohongshuBrowserView extends ItemView {
     codeImgOk = false;
     codeImgDiag = "代码图处理异常: " + (e && e.message || e);
   }
+  log("codeImgOk", codeImgOk, "diag", codeImgDiag);
+
+  return {
+    ok: titled && bodyOk,
+    msg: (titled ? "标题✓ " : "标题✗(" + titleDiag + ") ") +
+         (bodyOk ? "正文✓" : "正文✗(" + bodyDiag + ")") +
+         (codeImgDiag ? " | 代码图: " + codeImgDiag : ""),
+  };
 
   return {
     ok: titled && bodyOk,
