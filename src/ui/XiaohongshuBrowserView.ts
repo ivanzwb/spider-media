@@ -2,16 +2,7 @@ import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 
 import type SpiderMediaPlugin from "../main";
 
-// Node / Electron 接口（无 @types/node，故用 require 取并窄类型化）
-interface ElectronClipboardLike {
-	writeImage(image: ElectronNativeImageLike): void;
-}
-interface ElectronNativeImageLike {
-	__brand: "NativeImage";
-}
-interface ElectronNativeImageStaticLike {
-	createFromDataURL(dataUrl: string): ElectronNativeImageLike;
-}
+// Node 接口（无 @types/node，故用 require 取并窄类型化）
 interface FsPromisesLike {
 	mkdir(p: string, opts: { recursive: boolean }): Promise<void>;
 	writeFile(p: string, data: Uint8Array): Promise<void>;
@@ -23,9 +14,6 @@ const nodeRequire =
 	typeof window !== "undefined" && typeof (window as unknown as { require?: unknown }).require === "function"
 		? ((window as unknown as { require: (m: string) => unknown }).require)
 		: null;
-const electronMod = nodeRequire?.("electron") as
-	| { clipboard: ElectronClipboardLike; nativeImage: ElectronNativeImageStaticLike }
-	| undefined;
 const fsPromises = (nodeRequire?.("fs") as { promises?: FsPromisesLike } | undefined)?.promises;
 const osMod = nodeRequire?.("os") as { tmpdir(): string } | undefined;
 const pathMod = nodeRequire?.("path") as { join(...parts: string[]): string } | undefined;
@@ -166,9 +154,9 @@ export class XiaohongshuBrowserView extends ItemView {
 		const dataUrls = this.extractCodeImageDataUrls(html);
 		await this.dumpCodeBlockImagesToDisk(dataUrls);
 
-		// 先尝试自动上传代码图（写剪贴板 → 在 webview 触发 paste）
+		// 先尝试自动上传代码图（页面侧合成 File + 派发 change/drop 事件）
 		let autoUploaded = 0;
-		if (dataUrls.length > 0 && electronMod) {
+		if (dataUrls.length > 0) {
 			this.setStatus(`正在自动上传 ${dataUrls.length} 张代码图…`);
 			autoUploaded = await this.autoPasteImages(dataUrls);
 		}
@@ -204,16 +192,17 @@ export class XiaohongshuBrowserView extends ItemView {
 	}
 
 	/**
-	 * 自动逐张粘贴：
-	 *   1. 把图片写入系统剪贴板（Electron nativeImage）
-	 *   2. 在 webview 内 focus 上传区 + execCommand('paste')，userGesture=true 授权
-	 *   3. 等待页面上传完成后再处理下一张
+	 * 自动上传代码块图片到小红书：
+	 *   1. 在 webview 内把 dataURL 还原为 File 对象
+	 *   2. 优先策略：找到 input[type=file]，赋值 files + 派发 change
+	 *   3. 兜底策略：找上传区，派发完整 dragenter/dragover/drop 事件
+	 *   4. 再兜底：剪贴板 + paste 事件
 	 *
-	 * 返回实际成功触发粘贴的图片数量。
+	 * 返回成功触发上传的图片数量。
 	 */
 	private async autoPasteImages(dataUrls: string[]): Promise<number> {
-		if (!electronMod) return 0;
-		// 先尝试切到"上传图文"tab + focus 上传区一次
+		if (dataUrls.length === 0) return 0;
+		// 先尝试切到"上传图文"tab
 		try {
 			await this.webview.executeJavaScript(
 				`(() => {
@@ -221,7 +210,7 @@ export class XiaohongshuBrowserView extends ItemView {
     const all = document.querySelectorAll('button, span, div, a, [role="tab"]');
     for (const el of all) {
       const t = (el.textContent || '').trim();
-      if (t === text || t === text + ' ') { try { el.click(); return true; } catch (_) {} }
+      if (t === text || t === text + ' ') { try { el.click(); return true; } catch {} }
     }
     return false;
   };
@@ -229,58 +218,108 @@ export class XiaohongshuBrowserView extends ItemView {
 })();`,
 				true,
 			);
-			await new Promise((r) => window.setTimeout(r, 800));
+			await new Promise((r) => window.setTimeout(r, 1200));
 		} catch {
 			// 忽略
 		}
 
-		let success = 0;
-		for (let i = 0; i < dataUrls.length; i++) {
-			try {
-				const img = electronMod.nativeImage.createFromDataURL(dataUrls[i]);
-				electronMod.clipboard.writeImage(img);
-			} catch (err) {
-				console.warn("[spider-media] 写剪贴板失败", err);
-				continue;
-			}
-			// 在 webview 内 focus 上传区并触发 paste。userGesture=true 让 execCommand('paste') 被授权。
-			try {
-				const pasteResult = (await this.webview.executeJavaScript(
-					`(() => {
-  const findUpload = () => {
-    const sels = ['[class*="upload"]', '[class*="drag"]', '[class*="drop"]', '.upload-container', '.upload-wrapper'];
+		// 把所有 dataURL 一次性传进 webview，由页面侧循环上传——避免多次 IPC 损失上下文
+		const code = `(async () => {
+  const dataUrls = ${JSON.stringify(dataUrls)};
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const log = (...a) => { try { console.log("[spider-media][xhs-upload]", ...a); } catch {} };
+
+  const findFileInput = () => {
+    // 优先 accept 包含 image 的；否则任何 file input
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    const imgIn = inputs.find((i) => (i.accept || '').includes('image'));
+    return imgIn || inputs[0] || null;
+  };
+  const findDropZone = () => {
+    const sels = [
+      '.upload-input', '.upload-wrapper', '.upload-container',
+      '[class*="upload"]', '[class*="drag"]', '[class*="dropzone"]',
+    ];
     for (const s of sels) {
       const el = document.querySelector(s);
       if (el) return el;
     }
     return document.body;
   };
-  const target = findUpload();
-  try { target.focus && target.focus(); } catch (_) {}
-  try { target.click && target.click(); } catch (_) {}
-  let ok = false;
-  try { ok = document.execCommand('paste'); } catch (_) {}
-  // 兜底：直接派发 paste 事件（部分页面有 document 级 paste 监听）
-  if (!ok) {
+
+  const dataUrlToFile = async (url, name) => {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return new File([blob], name, { type: blob.type || 'image/png' });
+  };
+
+  let uploaded = 0;
+  let strategy = '';
+  for (let i = 0; i < dataUrls.length; i++) {
     try {
-      const ev = new Event('paste', { bubbles: true, cancelable: true });
-      target.dispatchEvent(ev);
-      ok = true;
-    } catch (_) {}
+      const file = await dataUrlToFile(dataUrls[i], 'code-' + (i + 1) + '.png');
+
+      // 策略 A：input[type=file].files = DataTransfer + change
+      let ok = false;
+      const input = findFileInput();
+      if (input) {
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          // 直接赋值 FileList
+          Object.defineProperty(input, 'files', { value: dt.files, writable: false, configurable: true });
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          ok = true;
+          strategy = 'input';
+          log('strategy=input idx=' + i + ' input.accept=' + input.accept);
+        } catch (e) {
+          log('input strategy failed', e && e.message);
+        }
+      }
+
+      // 策略 B：drop 事件到拖拽区
+      if (!ok) {
+        try {
+          const zone = findDropZone();
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          for (const type of ['dragenter', 'dragover', 'drop']) {
+            const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+            zone.dispatchEvent(ev);
+          }
+          ok = true;
+          strategy = 'drop';
+          log('strategy=drop idx=' + i + ' zone=' + (zone.className || zone.tagName));
+        } catch (e) {
+          log('drop strategy failed', e && e.message);
+        }
+      }
+
+      if (ok) uploaded++;
+      // 等待上传完成
+      await sleep(2200);
+    } catch (e) {
+      log('upload error idx=' + i, e && e.message);
+    }
   }
-  return { ok, tag: target.tagName, cls: (target.className || '').toString().slice(0, 80) };
-})();`,
-					true,
-				)) as { ok: boolean; tag: string; cls: string };
-				if (pasteResult?.ok) success++;
-				this.setStatus(`粘贴代码图 ${i + 1}/${dataUrls.length}…`);
-			} catch (err) {
-				console.warn("[spider-media] 执行 paste 失败", err);
-			}
-			// 等待上传完成（小红书图片上传 ~1.5-2.5s）
-			await new Promise((r) => window.setTimeout(r, 2000));
+  return { uploaded, total: dataUrls.length, strategy };
+})();`;
+
+		try {
+			const result = (await this.webview.executeJavaScript(code, true)) as {
+				uploaded: number;
+				total: number;
+				strategy: string;
+			};
+			this.setStatus(
+				`代码图上传 ${result?.uploaded ?? 0}/${result?.total ?? dataUrls.length}（策略：${result?.strategy || "未知"}）`,
+			);
+			return result?.uploaded ?? 0;
+		} catch (err) {
+			console.warn("[spider-media] autoPasteImages 执行失败", err);
+			return 0;
 		}
-		return success;
 	}
 
 	/** 把 dataURL 数组写到 OS 临时目录（用户兜底） */
