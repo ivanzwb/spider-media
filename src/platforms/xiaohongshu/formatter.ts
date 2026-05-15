@@ -29,10 +29,12 @@ export class XiaohongshuFormatter {
 						return `<blockquote>${body}</blockquote>\n`;
 					},
 					code({ text, lang }) {
-						const langAttr = lang ? ` class="language-${escapeHtml(lang)}"` : "";
-						const lines = text.split("\n").map((l) => escapeHtml(l) || "&nbsp;");
-						const html = lines.join("<br/>");
-						return `<pre style="white-space:pre-wrap;word-break:break-all;"><code${langAttr} style="white-space:pre-wrap;">${html}</code></pre>\n`;
+						// 小红书编辑器是受控 textarea / contenteditable，不支持代码块结构。
+						// 这里输出占位符，由 CodeBlockImageRenderer 在 adapter.format() 中
+						// 替换为 PNG 图片，再由 BrowserView 注入时上传到笔记图片区。
+						const encodedCode = encodeURIComponent(text);
+						const langAttr = lang ? ` data-lang="${encodeURIComponent(lang)}"` : "";
+						return `<div class="mp-codeblock" data-code="${encodedCode}"${langAttr}></div>\n`;
 					},
 					codespan({ text }) {
 						return `<code>${escapeHtml(text)}</code>`;

@@ -1,3 +1,4 @@
+import { CodeBlockImageRenderer } from "@/core/CodeBlockImageRenderer";
 import { ImageManager } from "@/core/ImageManager";
 import { MarkdownParser } from "@/core/MarkdownParser";
 import { MermaidConverter } from "@/core/MermaidConverter";
@@ -32,6 +33,7 @@ export class XiaohongshuAdapter extends PlatformAdapter {
 	private formatter = new XiaohongshuFormatter();
 	private postProcessor = new PostProcessor();
 	private mermaid = new MermaidConverter();
+	private codeImg = new CodeBlockImageRenderer();
 	private images: ImageManager;
 
 	constructor(private options: XiaohongshuAdapterOptions) {
@@ -56,6 +58,7 @@ export class XiaohongshuAdapter extends PlatformAdapter {
 		});
 		let html = await parser.parse(markdown);
 		html = await this.mermaid.renderAll(html);
+		html = await this.codeImg.renderAll(html);
 		html = await this.images.resolveAll(html);
 
 		return this.postProcessor.process(html, {

@@ -179,6 +179,7 @@ export class XiaohongshuBrowserView extends ItemView {
     try {
       const doc = new DOMParser().parseFromString(src, "text/html");
       const lines = [];
+      let codeImgCounter = 0;
 
       // 收集块级元素的"行内内容"为单行字符串（保留 <br> 换行 / <img> 占位）。
       // 这样 <p>Hello <strong>world</strong>!</p> 输出 "Hello world!" 而不是被拆成 3 行。
@@ -188,6 +189,11 @@ export class XiaohongshuBrowserView extends ItemView {
         const tag = node.tagName.toLowerCase();
         if (tag === "br") return "\\n";
         if (tag === "img") {
+          // 代码块图片占位：实际图片通过文件上传，这里只放序号标记
+          if (node.getAttribute("data-codeblock-img") === "1") {
+            codeImgCounter++;
+            return "[代码图片 " + codeImgCounter + "]";
+          }
           const alt = node.getAttribute("alt") || "";
           return "[图片" + (alt ? "：" + alt : "") + "]";
         }
@@ -214,6 +220,11 @@ export class XiaohongshuBrowserView extends ItemView {
         if (tag === "br") { lines.push(""); return; }
         if (tag === "hr") { lines.push("———"); return; }
         if (tag === "img") {
+          if (node.getAttribute("data-codeblock-img") === "1") {
+            codeImgCounter++;
+            lines.push("[代码图片 " + codeImgCounter + "]");
+            return;
+          }
           const alt = node.getAttribute("alt") || "";
           lines.push("[图片" + (alt ? "：" + alt : "") + "]");
           return;
@@ -426,10 +437,83 @@ export class XiaohongshuBrowserView extends ItemView {
     await sleep(400);
   }
 
+  // ===== 代码块图片上传 =====
+  // formatter 把 <pre> 转成了 <img data-codeblock-img="1" src="data:image/png;base64,...">
+  // 这里把这些 dataURL 转成 File，喂给小红书的文件 input，触发上传流程。
+  let codeImgDiag = "";
+  let codeImgOk = true;
+  try {
+    const doc = new DOMParser().parseFromString(HTML, "text/html");
+    const imgs = Array.from(doc.querySelectorAll('img[data-codeblock-img="1"]'));
+    if (imgs.length > 0) {
+      const files = [];
+      for (let i = 0; i < imgs.length; i++) {
+        const src = imgs[i].getAttribute("src") || "";
+        const m = /^data:image\\/(png|jpeg);base64,(.+)$/.exec(src);
+        if (!m) continue;
+        const mime = "image/" + m[1];
+        const bin = atob(m[2]);
+        const buf = new Uint8Array(bin.length);
+        for (let j = 0; j < bin.length; j++) buf[j] = bin.charCodeAt(j);
+        const blob = new Blob([buf], { type: mime });
+        files.push(new File([blob], "code-block-" + (i + 1) + "." + m[1], { type: mime }));
+      }
+
+      // 找文件上传 input（图片）。小红书一般在 .upload-input 或 input[type=file]
+      const findFileInput = () => {
+        const sels = [
+          'input[type="file"][accept*="image"]',
+          'input[type="file"]',
+        ];
+        const scan = (d) => {
+          for (const s of sels) {
+            const el = d.querySelector(s);
+            if (el) return el;
+          }
+          return null;
+        };
+        let el = scan(document);
+        if (el) return el;
+        for (let i = 0; i < window.frames.length; i++) {
+          try { el = scan(window.frames[i].document); if (el) return el; } catch (_) {}
+        }
+        return null;
+      };
+
+      // 等文件 input 出现（可能需要先打开上传区）
+      let fileInput = null;
+      const inputDeadline = Date.now() + 8000;
+      while (Date.now() < inputDeadline) {
+        fileInput = findFileInput();
+        if (fileInput) break;
+        await sleep(300);
+      }
+      if (!fileInput) {
+        codeImgOk = false;
+        codeImgDiag = "未找到文件上传 input，请手动上传 " + files.length + " 张代码图";
+      } else {
+        try {
+          const dt = new DataTransfer();
+          for (const f of files) dt.items.add(f);
+          fileInput.files = dt.files;
+          fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+          codeImgDiag = "已提交 " + files.length + " 张代码图至上传组件";
+        } catch (e) {
+          codeImgOk = false;
+          codeImgDiag = "上传失败: " + (e && e.message || e) + "，请手动上传 " + files.length + " 张代码图";
+        }
+      }
+    }
+  } catch (e) {
+    codeImgOk = false;
+    codeImgDiag = "代码图处理异常: " + (e && e.message || e);
+  }
+
   return {
     ok: titled && bodyOk,
     msg: (titled ? "标题✓ " : "标题✗(" + titleDiag + ") ") +
-         (bodyOk ? "正文✓" : "正文✗(" + bodyDiag + ")"),
+         (bodyOk ? "正文✓" : "正文✗(" + bodyDiag + ")") +
+         (codeImgDiag ? " | 代码图: " + codeImgDiag : ""),
   };
   } catch (e) {
     return { ok: false, msg: "注入脚本异常: " + (e && (e.stack || e.message) || String(e)) };
