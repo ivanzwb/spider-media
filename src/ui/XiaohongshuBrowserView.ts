@@ -290,6 +290,57 @@ export class XiaohongshuBrowserView extends ItemView {
           return;
         }
 
+        if (tag === "table") {
+          // 把表格降级为对齐的纯文本：每行用 " | " 分隔单元格，表头下加分隔线。
+          const rows = [];
+          const trs = node.querySelectorAll ? node.querySelectorAll("tr") : [];
+          let headerCount = 0;
+          for (const tr of trs) {
+            const cells = [];
+            let isHeader = false;
+            for (const cell of tr.children || []) {
+              const ctag = cell.tagName && cell.tagName.toLowerCase();
+              if (ctag !== "td" && ctag !== "th") continue;
+              if (ctag === "th") isHeader = true;
+              cells.push(getInlineText(cell).replace(/\\s+/g, " ").trim());
+            }
+            if (cells.length === 0) continue;
+            rows.push({ cells, isHeader });
+            if (isHeader) headerCount++;
+          }
+          if (rows.length === 0) return;
+          // 计算每列最大显示宽度（按可见字符近似；中文按 2 宽度）
+          const visualWidth = (s) => {
+            let w = 0;
+            for (const ch of s) w += ch.charCodeAt(0) > 0x7f ? 2 : 1;
+            return w;
+          };
+          const padTo = (s, w) => s + " ".repeat(Math.max(0, w - visualWidth(s)));
+          const colCount = Math.max(...rows.map((r) => r.cells.length));
+          const widths = new Array(colCount).fill(0);
+          for (const r of rows) {
+            for (let i = 0; i < r.cells.length; i++) {
+              widths[i] = Math.max(widths[i], visualWidth(r.cells[i]));
+            }
+          }
+          lines.push("");
+          for (let ri = 0; ri < rows.length; ri++) {
+            const r = rows[ri];
+            const padded = [];
+            for (let i = 0; i < colCount; i++) {
+              padded.push(padTo(r.cells[i] || "", widths[i]));
+            }
+            lines.push(padded.join(" | "));
+            // 表头下加一行分隔（如果有表头，且当前行属于最后一行表头）
+            if (r.isHeader && (ri + 1 === headerCount)) {
+              const sep = widths.map((w) => "─".repeat(Math.max(1, w))).join("─┼─");
+              lines.push(sep);
+            }
+          }
+          lines.push("");
+          return;
+        }
+
         // 容器元素（div / section 等）：继续遍历子节点
         for (const child of node.childNodes) walk(child, ctx);
       };
