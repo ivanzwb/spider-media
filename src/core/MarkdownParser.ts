@@ -23,7 +23,7 @@ export const IMAGE_EXTENSIONS = new Set([
  */
 export function convertImageWikilinks(text: string): string {
 	return text.replace(
-		/!\[\[([^\[\]]+?)(?:\|([^\[\]]*?))?\]\]/g,
+		/!\[\[([^[]+?)(?:\|([^[]*?))?\]\]/g,
 		(_match: string, link: string, alt: string | undefined): string => {
 			const altText = (alt ?? "").trim() || link.replace(/.*[/\\]/, "").replace(/\.[^.]+$/, "");
 			const pipeIdx = link.indexOf("|");
