@@ -179,34 +179,89 @@ export class XiaohongshuBrowserView extends ItemView {
     try {
       const doc = new DOMParser().parseFromString(src, "text/html");
       const lines = [];
-      const walk = (node, prefix) => {
+
+      // 收集块级元素的"行内内容"为单行字符串（保留 <br> 换行 / <img> 占位）。
+      // 这样 <p>Hello <strong>world</strong>!</p> 输出 "Hello world!" 而不是被拆成 3 行。
+      const getInlineText = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
+        if (node.nodeType !== Node.ELEMENT_NODE) return "";
+        const tag = node.tagName.toLowerCase();
+        if (tag === "br") return "\\n";
+        if (tag === "img") {
+          const alt = node.getAttribute("alt") || "";
+          return "[图片" + (alt ? "：" + alt : "") + "]";
+        }
+        let out = "";
+        for (const child of node.childNodes) out += getInlineText(child);
+        return out;
+      };
+
+      const pushBlock = (text) => {
+        const t = text.replace(/[ \\t]+/g, " ").replace(/ *\\n */g, "\\n").trim();
+        if (t) lines.push(t);
+      };
+
+      const walk = (node, ctx) => {
         if (node.nodeType === Node.TEXT_NODE) {
-          const t = node.textContent || "";
-          if (t.trim()) lines.push(prefix + t.trim());
+          // 顶层裸文本节点（少见）
+          const t = (node.textContent || "").trim();
+          if (t) lines.push(t);
           return;
         }
         if (node.nodeType !== Node.ELEMENT_NODE) return;
         const tag = node.tagName.toLowerCase();
+
         if (tag === "br") { lines.push(""); return; }
         if (tag === "hr") { lines.push("———"); return; }
         if (tag === "img") {
           const alt = node.getAttribute("alt") || "";
-          lines.push(prefix + "[图片" + (alt ? "：" + alt : "") + "]");
+          lines.push("[图片" + (alt ? "：" + alt : "") + "]");
           return;
         }
         if (/^h[1-6]$/.test(tag)) {
-          lines.push("");
-          lines.push("✨ " + (node.textContent || "").trim());
+          const text = getInlineText(node).trim();
+          if (text) {
+            lines.push("");
+            // 用层级数量调整 emoji，让用户在小红书上仍能看出标题层级
+            const depth = parseInt(tag[1], 10);
+            const marker = depth <= 2 ? "✨ " : depth === 3 ? "🔹 " : "▫️ ";
+            lines.push(marker + text);
+            lines.push("");
+          }
           return;
         }
-        if (tag === "li") {
-          const t = (node.textContent || "").trim();
-          if (t) lines.push(prefix + "• " + t);
+        if (tag === "p") {
+          pushBlock(getInlineText(node));
+          lines.push("");
           return;
         }
         if (tag === "blockquote") {
-          const t = (node.textContent || "").trim();
-          if (t) lines.push(prefix + "💭 " + t);
+          const text = getInlineText(node).replace(/\\s+/g, " ").trim();
+          if (text) {
+            lines.push("💭 " + text);
+            lines.push("");
+          }
+          return;
+        }
+        if (tag === "ul" || tag === "ol") {
+          const ordered = tag === "ol";
+          let idx = parseInt(node.getAttribute("start") || "1", 10);
+          if (!Number.isFinite(idx)) idx = 1;
+          for (const child of node.childNodes) {
+            if (child.nodeType !== Node.ELEMENT_NODE) continue;
+            if (child.tagName.toLowerCase() !== "li") continue;
+            const text = getInlineText(child).replace(/\\s+/g, " ").trim();
+            if (!text) continue;
+            const prefix = ordered ? (idx++) + ". " : "• ";
+            lines.push(prefix + text);
+          }
+          lines.push("");
+          return;
+        }
+        if (tag === "li") {
+          // 兼容直接出现的 <li>（无父 ul/ol 容器）
+          const text = getInlineText(node).replace(/\\s+/g, " ").trim();
+          if (text) lines.push("• " + text);
           return;
         }
         if (tag === "pre" || tag === "code") {
@@ -221,19 +276,20 @@ export class XiaohongshuBrowserView extends ItemView {
             .replace(/\\n+$/, "");
           if (text.trim()) {
             if (tag === "pre") {
-              lines.push("\u3010\u4ee3\u7801\u3011");
+              lines.push("【代码】");
               lines.push(text);
-              lines.push("\u2500\u2500\u2500");
+              lines.push("———");
             } else {
-              lines.push(prefix + "\`" + text + "\`");
+              lines.push("\`" + text + "\`");
             }
           }
           return;
         }
-        for (const child of node.childNodes) walk(child, prefix);
-        if (tag === "p") lines.push("");
+
+        // 容器元素（div / section 等）：继续遍历子节点
+        for (const child of node.childNodes) walk(child, ctx);
       };
-      for (const child of doc.body.childNodes) walk(child, "");
+      for (const child of doc.body.childNodes) walk(child, {});
       return lines.join("\\n").replace(/\\n{3,}/g, "\\n\\n").trim();
     } catch (e) {
       log("htmlToText failed", e && e.message || e);
