@@ -2,13 +2,18 @@ import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 
 import type SpiderMediaPlugin from "../main";
 
-// Node 接口（无 @types/node，故用 require 取并窄类型化）
+// Node / Electron 接口（无 @types/node，故用 require 取并窄类型化）
 interface FsPromisesLike {
 	mkdir(p: string, opts: { recursive: boolean }): Promise<void>;
 	writeFile(p: string, data: Uint8Array): Promise<void>;
 }
 interface NodeBufferStatic {
 	from(input: string, encoding: string): Uint8Array;
+}
+interface ElectronNativeImageLike { __brand: "NativeImage" }
+interface ElectronModule {
+	clipboard: { writeImage(img: ElectronNativeImageLike): void };
+	nativeImage: { createFromDataURL(dataUrl: string): ElectronNativeImageLike };
 }
 const nodeRequire =
 	typeof window !== "undefined" && typeof (window as unknown as { require?: unknown }).require === "function"
@@ -18,6 +23,7 @@ const fsPromises = (nodeRequire?.("fs") as { promises?: FsPromisesLike } | undef
 const osMod = nodeRequire?.("os") as { tmpdir(): string } | undefined;
 const pathMod = nodeRequire?.("path") as { join(...parts: string[]): string } | undefined;
 const BufferCtor = (window as unknown as { Buffer?: NodeBufferStatic }).Buffer;
+const electronMod = nodeRequire?.("electron") as ElectronModule | undefined;
 
 export const VIEW_TYPE_XIAOHONGSHU_BROWSER = "spider-media-xiaohongshu-browser";
 
@@ -30,6 +36,8 @@ interface WebviewElement extends HTMLElement {
 	getURL(): string;
 	reload(): void;
 	openDevTools(): void;
+	focus(): void;
+	sendInputEvent(event: Record<string, unknown>): void;
 }
 
 interface InjectionPayload {
@@ -43,8 +51,9 @@ interface InjectionResult {
 }
 
 const XIAOHONGSHU_HOME = "https://creator.xiaohongshu.com/";
-// 图文笔记发布入口（与「长文/article」不同；长文走 target=article，无标准 file input，只能粘贴）
-const XIAOHONGSHU_PUBLISH = "https://creator.xiaohongshu.com/publish/publish?source=official&target=image";
+// 注：小红书强制重定向 target=image → target=article。我们接受落在长文编辑器，
+// 然后用系统级 Ctrl+V 把代码块图片粘贴进 ProseMirror 编辑器（iframe 内）。
+const XIAOHONGSHU_PUBLISH = "https://creator.xiaohongshu.com/publish/publish?source=official";
 const XIAOHONGSHU_PARTITION = "persist:spider-media-xiaohongshu";
 
 /**
@@ -141,31 +150,27 @@ export class XiaohongshuBrowserView extends ItemView {
 		await this.waitReady();
 		const url = this.webview.getURL();
 		const onPublish = /creator\.xiaohongshu\.com\/publish/.test(url);
-		const onArticle = /target=article/.test(url);
-		if (!onPublish || onArticle) {
+		if (!onPublish) {
 			if (!navigateIfNeeded) {
-				this.setStatus(
-					onArticle
-						? "当前是「长文」编辑器，请切到「图文」（或点工具栏「发布笔记」重新进入）"
-						: "当前不在发布页面，请先点「发布笔记」",
-				);
+				this.setStatus("当前不在发布页面，请先点「发布笔记」");
 				return;
 			}
 			await this.webview.loadURL(XIAOHONGSHU_PUBLISH);
 			await new Promise((r) => window.setTimeout(r, 4500));
 		}
-
 		const { title, html } = this.pending;
 
-		// 抽取代码块图片：保存到磁盘 + 自动逐张粘贴上传。
+		// 抽取代码块图片：保存到磁盘 + 自动上传。
 		const dataUrls = this.extractCodeImageDataUrls(html);
 		await this.dumpCodeBlockImagesToDisk(dataUrls);
 
-		// 先尝试自动上传代码图（页面侧合成 File + 派发 change/drop 事件）
+		// 小红书的发布 UI（无论图文还是长文）都渲染在跨源 iframe 内，DOM 级 file input / drop
+		// 都无法直达。统一用系统级 Ctrl+V：把图片写入剪贴板，再用 sendInputEvent 发键盘事件，
+		// 这是唯一能穿透跨源 iframe 的方式（被编辑器的 paste 监听器接住）。
 		let autoUploaded = 0;
 		if (dataUrls.length > 0) {
-			this.setStatus(`正在自动上传 ${dataUrls.length} 张代码图…`);
-			autoUploaded = await this.autoPasteImages(dataUrls);
+			this.setStatus(`正在自动粘贴 ${dataUrls.length} 张代码图（系统级 Ctrl+V）…`);
+			autoUploaded = await this.pasteImagesViaKeyboard(dataUrls);
 		}
 
 		const code = this.buildInjectionCode(title, html);
@@ -199,213 +204,75 @@ export class XiaohongshuBrowserView extends ItemView {
 	}
 
 	/**
-	 * 自动上传代码块图片到小红书：
-	 *   1. 在 webview 内把 dataURL 还原为 File 对象
-	 *   2. 优先策略：找到 input[type=file]，赋值 files + 派发 change
-	 *   3. 兜底策略：找上传区，派发完整 dragenter/dragover/drop 事件
-	 *   4. 再兜底：剪贴板 + paste 事件
+	 * 长文编辑器专用：用系统级 Ctrl+V 把图片粘贴进 iframe 内的 ProseMirror。
+	 *   1. 用 sendInputEvent 在 iframe 中心位置模拟鼠标点击，让编辑器获取焦点
+	 *   2. 每张图：Electron clipboard.writeImage 写系统剪贴板
+	 *   3. sendInputEvent 发 Ctrl+V（系统级事件穿透 iframe 跨域限制）
+	 *   4. 等待 XHS 上传完成
 	 *
-	 * 返回成功触发上传的图片数量。
+	 * 返回成功粘贴的图片数量。
 	 */
-	private async autoPasteImages(dataUrls: string[]): Promise<number> {
+	private async pasteImagesViaKeyboard(dataUrls: string[]): Promise<number> {
 		if (dataUrls.length === 0) return 0;
-
-		// 把所有 dataURL 一次性传进 webview，由页面侧轮询/找上传组件/触发上传
-		const code = `(async () => {
-  const dataUrls = ${JSON.stringify(dataUrls)};
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const log = (...a) => { try { console.log("[spider-media][xhs-upload]", ...a); } catch {} };
-
-  // 0. 切到 "上传图文" tab（如有）。多种文案兜底。
-  const clickTab = (text) => {
-    const all = document.querySelectorAll('button, span, div, a, [role="tab"], [class*="tab"]');
-    for (const el of all) {
-      const t = (el.textContent || '').trim();
-      if (t === text || t === text + ' ') { try { el.click(); log('clicked tab', text); return true; } catch {} }
-    }
-    return false;
-  };
-  clickTab('上传图文') || clickTab('图文') || clickTab('发布图文') || clickTab('上传视频');
-  await sleep(800);
-  // 再次尝试图文（视频→图文）
-  clickTab('上传图文') || clickTab('图文');
-  await sleep(800);
-
-  // 1. 轮询查找 file input（最多 15s）。优先 accept 含 image 的。
-  const findFileInputs = () => {
-    const out = [];
-    const scan = (d) => {
-      try {
-        const els = d.querySelectorAll('input[type="file"]');
-        for (const el of els) out.push(el);
-      } catch {}
-    };
-    scan(document);
-    for (let i = 0; i < window.frames.length; i++) {
-      try { scan(window.frames[i].document); } catch {}
-    }
-    return out;
-  };
-  const findDropZone = () => {
-    const sels = [
-      '.upload-input', '.upload-wrapper', '.upload-container', '.drag-over',
-      '[class*="upload"]', '[class*="dropzone"]', '[class*="drag"]',
-    ];
-    const scan = (d) => {
-      for (const s of sels) {
-        try {
-          const el = d.querySelector(s);
-          if (el) return el;
-        } catch {}
-      }
-      return null;
-    };
-    let hit = scan(document);
-    if (hit) return hit;
-    for (let i = 0; i < window.frames.length; i++) {
-      try {
-        hit = scan(window.frames[i].document);
-        if (hit) return hit;
-      } catch {}
-    }
-    return null;
-  };
-
-  // 诊断：抓一次当前页面快照
-  const dumpDiagnostics = () => {
-    const info = {
-      url: location.href,
-      iframes: window.frames.length,
-      allInputs: document.querySelectorAll('input').length,
-      fileInputs: document.querySelectorAll('input[type="file"]').length,
-      uploadTexts: [],
-      classes: [],
-    };
-    const txt = ['上传图文', '上传视频', '上传', '图文'];
-    for (const t of txt) {
-      const found = Array.from(document.querySelectorAll('button, span, div, a'))
-        .filter((el) => (el.textContent || '').trim() === t).length;
-      if (found > 0) info.uploadTexts.push(t + '=' + found);
-    }
-    // 抓含 upload/drag/drop 字样的 class
-    const allEls = document.querySelectorAll('[class]');
-    const seen = new Set();
-    for (const el of allEls) {
-      const c = String(el.className || '');
-      for (const tok of c.split(/\\s+/)) {
-        if (/upload|drag|drop|file/i.test(tok) && !seen.has(tok)) {
-          seen.add(tok);
-          info.classes.push(tok);
-          if (info.classes.length >= 30) break;
-        }
-      }
-      if (info.classes.length >= 30) break;
-    }
-    return info;
-  };
-
-  let inputs = [];
-  let zone = null;
-  const deadline = Date.now() + 15000;
-  while (Date.now() < deadline) {
-    inputs = findFileInputs();
-    zone = findDropZone();
-    if (inputs.length > 0 || zone) break;
-    await sleep(400);
-  }
-  log('found inputs=' + inputs.length + ' zone=' + (zone ? (zone.className || zone.tagName) : 'null'));
-  if (inputs.length === 0 && !zone) {
-    log('diagnostics', JSON.stringify(dumpDiagnostics()));
-  }
-
-  if (inputs.length === 0 && !zone) {
-    // 没有上传 UI 也兜底尝试：在 document.body 派发 drop（部分页面在全局监听）
-    log('no upload UI detected, fallback dropping on document.body');
-    zone = document.body;
-  }
-
-  // 2. 把所有 dataURL 转 File，一次性灌入（小红书支持批量上传）。
-  const files = [];
-  for (let i = 0; i < dataUrls.length; i++) {
-    try {
-      const res = await fetch(dataUrls[i]);
-      const blob = await res.blob();
-      files.push(new File([blob], 'code-' + (i + 1) + '.png', { type: blob.type || 'image/png' }));
-    } catch (e) {
-      log('fetch dataUrl failed idx=' + i, e && e.message);
-    }
-  }
-  log('built files=' + files.length);
-  if (files.length === 0) return { uploaded: 0, total: dataUrls.length, strategy: 'no-files' };
-
-  // 3. 策略 A：input.files + change（accept=image 优先）
-  let strategy = '';
-  let ok = false;
-  const sortedInputs = inputs.slice().sort((a, b) => {
-    const score = (el) => ((el.accept || '').includes('image') ? 0 : 1);
-    return score(a) - score(b);
-  });
-  for (const input of sortedInputs) {
-    try {
-      const dt = new DataTransfer();
-      for (const f of files) dt.items.add(f);
-      // input 可能被禁用或不可写：尝试两种方式
-      try { input.files = dt.files; } catch {
-        Object.defineProperty(input, 'files', { value: dt.files, writable: false, configurable: true });
-      }
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      strategy = 'input(accept=' + (input.accept || '*') + ')';
-      ok = true;
-      log('strategy A ok', strategy);
-      break;
-    } catch (e) {
-      log('input strategy failed', e && e.message);
-    }
-  }
-
-  // 4. 策略 B：drop 事件（无论 A 是否成功，再触发一次以最大化命中率）
-  const dropTarget = zone || (sortedInputs[0] && sortedInputs[0].closest('[class*="upload"],[class*="drag"],[class*="drop"]')) || document.body;
-  try {
-    const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-    for (const type of ['dragenter', 'dragover', 'drop']) {
-      const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
-      dropTarget.dispatchEvent(ev);
-    }
-    if (!ok) {
-      strategy = 'drop(' + (dropTarget.className || dropTarget.tagName) + ')';
-      ok = true;
-    } else {
-      strategy += '+drop';
-    }
-    log('strategy B ok', strategy);
-  } catch (e) {
-    log('drop strategy failed', e && e.message);
-  }
-
-  // 5. 等待上传完成
-  await sleep(2500 + files.length * 500);
-
-  return { uploaded: ok ? files.length : 0, total: dataUrls.length, strategy };
-})();`;
-
-		try {
-			const result = (await this.webview.executeJavaScript(code, true)) as {
-				uploaded: number;
-				total: number;
-				strategy: string;
-				reason?: string;
-			};
-			const reason = result?.reason ? `（${result.reason}）` : "";
-			this.setStatus(
-				`代码图上传 ${result?.uploaded ?? 0}/${result?.total ?? dataUrls.length}（策略：${result?.strategy || "未知"}）${reason}`,
-			);
-			return result?.uploaded ?? 0;
-		} catch (err) {
-			console.warn("[spider-media] autoPasteImages 执行失败", err);
+		if (!electronMod) {
+			this.setStatus("Electron 模块不可用，无法自动粘贴；请手动 Ctrl+V");
 			return 0;
 		}
+
+		// 1. 找 iframe 中心点，让编辑器获取焦点
+		let clickX = 400;
+		let clickY = 500;
+		try {
+			const coords = (await this.webview.executeJavaScript(
+				`(() => {
+  const ifr = document.querySelector('iframe');
+  if (!ifr) return null;
+  const r = ifr.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.55) };
+})();`,
+				false,
+			)) as { x: number; y: number } | null;
+			if (coords) {
+				clickX = coords.x;
+				clickY = coords.y;
+			}
+		} catch (err) {
+			console.warn("[spider-media] 获取 iframe 坐标失败", err);
+		}
+
+		this.webview.focus();
+		try {
+			this.webview.sendInputEvent({ type: "mouseDown", x: clickX, y: clickY, button: "left", clickCount: 1 });
+			this.webview.sendInputEvent({ type: "mouseUp", x: clickX, y: clickY, button: "left", clickCount: 1 });
+		} catch (err) {
+			console.warn("[spider-media] 模拟点击失败", err);
+		}
+		await new Promise((r) => window.setTimeout(r, 600));
+
+		let uploaded = 0;
+		for (let i = 0; i < dataUrls.length; i++) {
+			try {
+				const img = electronMod.nativeImage.createFromDataURL(dataUrls[i]);
+				electronMod.clipboard.writeImage(img);
+			} catch (err) {
+				console.warn("[spider-media] 写剪贴板失败", err);
+				continue;
+			}
+			try {
+				this.webview.focus();
+				// 模拟 Ctrl+V：keyDown + char + keyUp，三段都带 control modifier
+				this.webview.sendInputEvent({ type: "keyDown", keyCode: "V", modifiers: ["control"] });
+				this.webview.sendInputEvent({ type: "char", keyCode: "V", modifiers: ["control"] });
+				this.webview.sendInputEvent({ type: "keyUp", keyCode: "V", modifiers: ["control"] });
+				uploaded++;
+				this.setStatus(`粘贴代码图 ${i + 1}/${dataUrls.length}…`);
+			} catch (err) {
+				console.warn("[spider-media] sendInputEvent 失败", err);
+			}
+			// 等待 XHS 上传 + Vue/ProseMirror 渲染
+			await new Promise((r) => window.setTimeout(r, 2500));
+		}
+		return uploaded;
 	}
 
 	/** 把 dataURL 数组写到 OS 临时目录（用户兜底） */
