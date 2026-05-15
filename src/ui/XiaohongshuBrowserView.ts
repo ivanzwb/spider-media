@@ -202,108 +202,134 @@ export class XiaohongshuBrowserView extends ItemView {
 	 */
 	private async autoPasteImages(dataUrls: string[]): Promise<number> {
 		if (dataUrls.length === 0) return 0;
-		// 先尝试切到"上传图文"tab
-		try {
-			await this.webview.executeJavaScript(
-				`(() => {
-  const click = (text) => {
-    const all = document.querySelectorAll('button, span, div, a, [role="tab"]');
-    for (const el of all) {
-      const t = (el.textContent || '').trim();
-      if (t === text || t === text + ' ') { try { el.click(); return true; } catch {} }
-    }
-    return false;
-  };
-  click('上传图文') || click('图文') || click('发布图文');
-})();`,
-				true,
-			);
-			await new Promise((r) => window.setTimeout(r, 1200));
-		} catch {
-			// 忽略
-		}
 
-		// 把所有 dataURL 一次性传进 webview，由页面侧循环上传——避免多次 IPC 损失上下文
+		// 把所有 dataURL 一次性传进 webview，由页面侧轮询/找上传组件/触发上传
 		const code = `(async () => {
   const dataUrls = ${JSON.stringify(dataUrls)};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const log = (...a) => { try { console.log("[spider-media][xhs-upload]", ...a); } catch {} };
 
-  const findFileInput = () => {
-    // 优先 accept 包含 image 的；否则任何 file input
-    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-    const imgIn = inputs.find((i) => (i.accept || '').includes('image'));
-    return imgIn || inputs[0] || null;
+  // 0. 切到 "上传图文" tab（如有）。多种文案兜底。
+  const clickTab = (text) => {
+    const all = document.querySelectorAll('button, span, div, a, [role="tab"], [class*="tab"]');
+    for (const el of all) {
+      const t = (el.textContent || '').trim();
+      if (t === text || t === text + ' ') { try { el.click(); log('clicked tab', text); return true; } catch {} }
+    }
+    return false;
+  };
+  clickTab('上传图文') || clickTab('图文') || clickTab('发布图文') || clickTab('上传视频');
+  await sleep(800);
+  // 再次尝试图文（视频→图文）
+  clickTab('上传图文') || clickTab('图文');
+  await sleep(800);
+
+  // 1. 轮询查找 file input（最多 15s）。优先 accept 含 image 的。
+  const findFileInputs = () => {
+    const out = [];
+    const scan = (d) => {
+      try {
+        const els = d.querySelectorAll('input[type="file"]');
+        for (const el of els) out.push(el);
+      } catch {}
+    };
+    scan(document);
+    for (let i = 0; i < window.frames.length; i++) {
+      try { scan(window.frames[i].document); } catch {}
+    }
+    return out;
   };
   const findDropZone = () => {
     const sels = [
-      '.upload-input', '.upload-wrapper', '.upload-container',
-      '[class*="upload"]', '[class*="drag"]', '[class*="dropzone"]',
+      '.upload-input', '.upload-wrapper', '.upload-container', '.drag-over',
+      '[class*="upload"]', '[class*="dropzone"]', '[class*="drag"]',
     ];
     for (const s of sels) {
       const el = document.querySelector(s);
       if (el) return el;
     }
-    return document.body;
+    return null;
   };
 
-  const dataUrlToFile = async (url, name) => {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return new File([blob], name, { type: blob.type || 'image/png' });
-  };
+  let inputs = [];
+  let zone = null;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    inputs = findFileInputs();
+    zone = findDropZone();
+    if (inputs.length > 0 || zone) break;
+    await sleep(400);
+  }
+  log('found inputs=' + inputs.length + ' zone=' + (zone ? (zone.className || zone.tagName) : 'null'));
 
-  let uploaded = 0;
-  let strategy = '';
+  if (inputs.length === 0 && !zone) {
+    return { uploaded: 0, total: dataUrls.length, strategy: 'none', reason: '未找到上传 input 或拖拽区' };
+  }
+
+  // 2. 把所有 dataURL 转 File，一次性灌入（小红书支持批量上传）。
+  const files = [];
   for (let i = 0; i < dataUrls.length; i++) {
     try {
-      const file = await dataUrlToFile(dataUrls[i], 'code-' + (i + 1) + '.png');
-
-      // 策略 A：input[type=file].files = DataTransfer + change
-      let ok = false;
-      const input = findFileInput();
-      if (input) {
-        try {
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          // 直接赋值 FileList
-          Object.defineProperty(input, 'files', { value: dt.files, writable: false, configurable: true });
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          ok = true;
-          strategy = 'input';
-          log('strategy=input idx=' + i + ' input.accept=' + input.accept);
-        } catch (e) {
-          log('input strategy failed', e && e.message);
-        }
-      }
-
-      // 策略 B：drop 事件到拖拽区
-      if (!ok) {
-        try {
-          const zone = findDropZone();
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          for (const type of ['dragenter', 'dragover', 'drop']) {
-            const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
-            zone.dispatchEvent(ev);
-          }
-          ok = true;
-          strategy = 'drop';
-          log('strategy=drop idx=' + i + ' zone=' + (zone.className || zone.tagName));
-        } catch (e) {
-          log('drop strategy failed', e && e.message);
-        }
-      }
-
-      if (ok) uploaded++;
-      // 等待上传完成
-      await sleep(2200);
+      const res = await fetch(dataUrls[i]);
+      const blob = await res.blob();
+      files.push(new File([blob], 'code-' + (i + 1) + '.png', { type: blob.type || 'image/png' }));
     } catch (e) {
-      log('upload error idx=' + i, e && e.message);
+      log('fetch dataUrl failed idx=' + i, e && e.message);
     }
   }
-  return { uploaded, total: dataUrls.length, strategy };
+  log('built files=' + files.length);
+  if (files.length === 0) return { uploaded: 0, total: dataUrls.length, strategy: 'no-files' };
+
+  // 3. 策略 A：input.files + change（accept=image 优先）
+  let strategy = '';
+  let ok = false;
+  const sortedInputs = inputs.slice().sort((a, b) => {
+    const score = (el) => ((el.accept || '').includes('image') ? 0 : 1);
+    return score(a) - score(b);
+  });
+  for (const input of sortedInputs) {
+    try {
+      const dt = new DataTransfer();
+      for (const f of files) dt.items.add(f);
+      // input 可能被禁用或不可写：尝试两种方式
+      try { input.files = dt.files; } catch {
+        Object.defineProperty(input, 'files', { value: dt.files, writable: false, configurable: true });
+      }
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      strategy = 'input(accept=' + (input.accept || '*') + ')';
+      ok = true;
+      log('strategy A ok', strategy);
+      break;
+    } catch (e) {
+      log('input strategy failed', e && e.message);
+    }
+  }
+
+  // 4. 策略 B：drop 事件（无论 A 是否成功，再触发一次以最大化命中率）
+  const dropTarget = zone || (sortedInputs[0] && sortedInputs[0].closest('[class*="upload"],[class*="drag"],[class*="drop"]')) || document.body;
+  try {
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+      dropTarget.dispatchEvent(ev);
+    }
+    if (!ok) {
+      strategy = 'drop(' + (dropTarget.className || dropTarget.tagName) + ')';
+      ok = true;
+    } else {
+      strategy += '+drop';
+    }
+    log('strategy B ok', strategy);
+  } catch (e) {
+    log('drop strategy failed', e && e.message);
+  }
+
+  // 5. 等待上传完成
+  await sleep(2500 + files.length * 500);
+
+  return { uploaded: ok ? files.length : 0, total: dataUrls.length, strategy };
 })();`;
 
 		try {
@@ -311,9 +337,11 @@ export class XiaohongshuBrowserView extends ItemView {
 				uploaded: number;
 				total: number;
 				strategy: string;
+				reason?: string;
 			};
+			const reason = result?.reason ? `（${result.reason}）` : "";
 			this.setStatus(
-				`代码图上传 ${result?.uploaded ?? 0}/${result?.total ?? dataUrls.length}（策略：${result?.strategy || "未知"}）`,
+				`代码图上传 ${result?.uploaded ?? 0}/${result?.total ?? dataUrls.length}（策略：${result?.strategy || "未知"}）${reason}`,
 			);
 			return result?.uploaded ?? 0;
 		} catch (err) {
@@ -645,147 +673,10 @@ export class XiaohongshuBrowserView extends ItemView {
     await sleep(400);
   }
 
-  // ===== 代码块图片上传 =====
-  // formatter 把 <pre> 转成了 <img data-codeblock-img="1" src="data:image/png;base64,...">
-  // 这里把这些 dataURL 转成 File，喂给小红书的文件 input，触发上传流程。
-  let codeImgDiag = "";
-  let codeImgOk = true;
-  try {
-    const doc = new DOMParser().parseFromString(HTML, "text/html");
-    const imgs = Array.from(doc.querySelectorAll('img[data-codeblock-img="1"]'));
-    if (imgs.length > 0) {
-      log("发现代码图片", imgs.length, "张，开始转 File");
-      const files = [];
-      for (let i = 0; i < imgs.length; i++) {
-        const src = imgs[i].getAttribute("src") || "";
-        const m = /^data:image\\/(png|jpeg);base64,(.+)$/.exec(src);
-        if (!m) { log("跳过非 dataURL", src.slice(0, 40)); continue; }
-        const mime = "image/" + m[1];
-        const bin = atob(m[2]);
-        const buf = new Uint8Array(bin.length);
-        for (let j = 0; j < bin.length; j++) buf[j] = bin.charCodeAt(j);
-        const blob = new Blob([buf], { type: mime });
-        files.push(new File([blob], "code-block-" + (i + 1) + "." + m[1], { type: mime }));
-      }
-      log("生成 File 数量", files.length);
-
-      // 0. 先尝试切换到「图文」tab（如果当前在视频/直播 tab）
-      const tryClickTab = () => {
-        const sel = [
-          '.creator-tab',
-          '[class*="tab"]',
-          'button', 'span', 'div'
-        ];
-        const candidates = document.querySelectorAll(sel.join(','));
-        for (const el of candidates) {
-          const t = (el.textContent || '').trim();
-          if (t === '上传图文' || t === '图文' || t === '发布图文') {
-            try { el.click(); log("点击 tab", t); return true; } catch (_) {}
-          }
-        }
-        return false;
-      };
-      tryClickTab();
-      await sleep(500);
-
-      // 1. 找文件上传 input（图片）。
-      const findFileInputs = () => {
-        const results = [];
-        const sels = [
-          'input[type="file"][accept*="image"]',
-          'input[type="file"][multiple]',
-          'input[type="file"]',
-        ];
-        const scan = (d) => {
-          for (const s of sels) {
-            const els = d.querySelectorAll(s);
-            for (const el of els) results.push(el);
-          }
-        };
-        scan(document);
-        for (let i = 0; i < window.frames.length; i++) {
-          try { scan(window.frames[i].document); } catch (_) {}
-        }
-        return results;
-      };
-
-      // 等文件 input 出现（可能需要先打开上传区）
-      let fileInputs = [];
-      const inputDeadline = Date.now() + 15000;
-      while (Date.now() < inputDeadline) {
-        fileInputs = findFileInputs();
-        if (fileInputs.length > 0) break;
-        await sleep(400);
-      }
-      log("找到 file input 数量", fileInputs.length);
-
-      if (fileInputs.length === 0) {
-        codeImgOk = false;
-        codeImgDiag = "未找到文件上传 input，请手动上传 " + files.length + " 张代码图";
-      } else {
-        let uploaded = false;
-        let lastErr = "";
-        for (const fileInput of fileInputs) {
-          try {
-            const dt = new DataTransfer();
-            for (const f of files) dt.items.add(f);
-            // 策略 A: 设置 input.files + change/input
-            try {
-              fileInput.files = dt.files;
-              fileInput.dispatchEvent(new Event("input", { bubbles: true }));
-              fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-              log("策略 A: 已写入 input.files", fileInput.outerHTML.slice(0, 120));
-            } catch (e1) {
-              lastErr = "A:" + (e1 && e1.message || e1);
-            }
-            // 策略 B: 在最近的上传容器上模拟 drop
-            try {
-              const dropZone =
-                fileInput.closest('[class*="upload"],[class*="drop"],[class*="drag"]') ||
-                fileInput.parentElement ||
-                fileInput;
-              const dt2 = new DataTransfer();
-              for (const f of files) dt2.items.add(f);
-              const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt2 });
-              const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt2 });
-              dropZone.dispatchEvent(dragOver);
-              dropZone.dispatchEvent(drop);
-              log("策略 B: drop 已派发到", dropZone.tagName, (dropZone.className || ""));
-            } catch (e2) {
-              lastErr = "B:" + (e2 && e2.message || e2);
-            }
-            uploaded = true;
-            break;
-          } catch (e) {
-            lastErr = (e && e.message || e);
-          }
-        }
-        if (uploaded) {
-          codeImgDiag = "已尝试上传 " + files.length + " 张代码图（请确认编辑器中已出现图片）";
-        } else {
-          codeImgOk = false;
-          codeImgDiag = "上传失败: " + lastErr + "，请手动上传 " + files.length + " 张代码图";
-        }
-      }
-    }
-  } catch (e) {
-    codeImgOk = false;
-    codeImgDiag = "代码图处理异常: " + (e && e.message || e);
-  }
-  log("codeImgOk", codeImgOk, "diag", codeImgDiag);
-
   return {
     ok: titled && bodyOk,
     msg: (titled ? "标题✓ " : "标题✗(" + titleDiag + ") ") +
-         (bodyOk ? "正文✓" : "正文✗(" + bodyDiag + ")") +
-         (codeImgDiag ? " | 代码图: " + codeImgDiag : ""),
-  };
-
-  return {
-    ok: titled && bodyOk,
-    msg: (titled ? "标题✓ " : "标题✗(" + titleDiag + ") ") +
-         (bodyOk ? "正文✓" : "正文✗(" + bodyDiag + ")") +
-         (codeImgDiag ? " | 代码图: " + codeImgDiag : ""),
+         (bodyOk ? "正文✓" : "正文✗(" + bodyDiag + ")"),
   };
   } catch (e) {
     return { ok: false, msg: "注入脚本异常: " + (e && (e.stack || e.message) || String(e)) };
