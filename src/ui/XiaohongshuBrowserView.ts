@@ -2,6 +2,35 @@ import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 
 import type SpiderMediaPlugin from "../main";
 
+// Node / Electron 接口（无 @types/node，故用 require 取并窄类型化）
+interface ElectronClipboardLike {
+	writeImage(image: ElectronNativeImageLike): void;
+}
+interface ElectronNativeImageLike {
+	__brand: "NativeImage";
+}
+interface ElectronNativeImageStaticLike {
+	createFromDataURL(dataUrl: string): ElectronNativeImageLike;
+}
+interface FsPromisesLike {
+	mkdir(p: string, opts: { recursive: boolean }): Promise<void>;
+	writeFile(p: string, data: Uint8Array): Promise<void>;
+}
+interface NodeBufferStatic {
+	from(input: string, encoding: string): Uint8Array;
+}
+const nodeRequire =
+	typeof window !== "undefined" && typeof (window as unknown as { require?: unknown }).require === "function"
+		? ((window as unknown as { require: (m: string) => unknown }).require)
+		: null;
+const electronMod = nodeRequire?.("electron") as
+	| { clipboard: ElectronClipboardLike; nativeImage: ElectronNativeImageStaticLike }
+	| undefined;
+const fsPromises = (nodeRequire?.("fs") as { promises?: FsPromisesLike } | undefined)?.promises;
+const osMod = nodeRequire?.("os") as { tmpdir(): string } | undefined;
+const pathMod = nodeRequire?.("path") as { join(...parts: string[]): string } | undefined;
+const BufferCtor = (window as unknown as { Buffer?: NodeBufferStatic }).Buffer;
+
 export const VIEW_TYPE_XIAOHONGSHU_BROWSER = "spider-media-xiaohongshu-browser";
 
 interface WebviewElement extends HTMLElement {
@@ -132,12 +161,19 @@ export class XiaohongshuBrowserView extends ItemView {
 		}
 
 		const { title, html } = this.pending;
+
+		// 先把代码块图片保存到磁盘 + 写入剪贴板，方便用户在编辑器中 Ctrl+V 粘贴。
+		const codeImgPaths = await this.dumpCodeBlockImages(html);
+
 		const code = this.buildInjectionCode(title, html);
 		try {
 			const result = (await this.webview.executeJavaScript(code, true)) as InjectionResult;
 			if (result?.ok) {
-				this.setStatus("✅ 已注入文字内容，请手动上传图片并发布");
-				new Notice("内容已注入小红书编辑器（图片需手动上传）");
+				const extra = codeImgPaths.length > 0
+					? `；已复制第 1 张代码图到剪贴板，请在编辑器中 Ctrl+V 粘贴（共 ${codeImgPaths.length} 张，路径见控制台）`
+					: "";
+				this.setStatus(`✅ 已注入文字内容${extra}`);
+				new Notice(`内容已注入小红书编辑器${extra || "（图片需手动上传）"}`);
 			} else {
 				this.setStatus(`❌ 注入失败：${result?.msg ?? "未知错误"}`);
 				new Notice(`注入失败：${result?.msg ?? ""}`);
@@ -147,6 +183,58 @@ export class XiaohongshuBrowserView extends ItemView {
 			this.setStatus(`❌ 执行脚本失败：${msg}`);
 			new Notice(`执行脚本失败：${msg}`);
 		}
+	}
+
+	/**
+	 * 抽取 HTML 中所有 data-codeblock-img dataURL 图片：
+	 *   1. 保存为 PNG 到 OS 临时目录（spider-media-xhs-code/）
+	 *   2. 把第一张图片写入系统剪贴板（用户可在编辑器中 Ctrl+V）
+	 * 返回保存的文件路径数组（用于状态提示）。
+	 */
+	private async dumpCodeBlockImages(html: string): Promise<string[]> {
+		const re = /<img[^>]*data-codeblock-img="1"[^>]*src="(data:image\/(?:png|jpeg);base64,[^"]+)"/g;
+		const dataUrls: string[] = [];
+		for (const m of html.matchAll(re)) dataUrls.push(m[1]);
+		if (dataUrls.length === 0) return [];
+
+		if (!fsPromises || !osMod || !pathMod || !BufferCtor) {
+			console.warn("[spider-media] Node fs/os/path/Buffer 不可用，跳过保存代码图");
+			return [];
+		}
+
+		const dir = pathMod.join(osMod.tmpdir(), "spider-media-xhs-code");
+		try {
+			await fsPromises.mkdir(dir, { recursive: true });
+		} catch (err) {
+			console.warn("[spider-media] 无法创建临时目录", err);
+			return [];
+		}
+
+		const saved: string[] = [];
+		const stamp = Date.now();
+		for (let i = 0; i < dataUrls.length; i++) {
+			const match = /^data:image\/(png|jpeg);base64,(.+)$/.exec(dataUrls[i]);
+			if (!match) continue;
+			const ext = match[1];
+			const buf = BufferCtor.from(match[2], "base64");
+			const file = pathMod.join(dir, `code-${stamp}-${i + 1}.${ext}`);
+			try {
+				await fsPromises.writeFile(file, buf);
+				saved.push(file);
+			} catch (err) {
+				console.warn("[spider-media] 写入代码图失败", err);
+			}
+		}
+
+		if (saved.length > 0 && electronMod) {
+			try {
+				const img = electronMod.nativeImage.createFromDataURL(dataUrls[0]);
+				electronMod.clipboard.writeImage(img);
+			} catch (err) {
+				console.warn("[spider-media] 写入剪贴板失败", err);
+			}
+		}
+		return saved;
 	}
 
 	/**
