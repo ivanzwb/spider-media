@@ -61,6 +61,23 @@ export class ImageManager {
 			.trim();
 	}
 
+	/**
+	 * 将相对路径（含 ../）基于 baseDir 解析为 vault 绝对路径。
+	 * 例如：baseDir="raw/articles", rel="../assets/fig.png" → "raw/assets/fig.png"
+	 */
+	private resolveRelativePath(baseDir: string, rel: string): string {
+		const base = baseDir.replace(/\\/g, "/").split("/").filter(Boolean);
+		const parts = rel.replace(/\\/g, "/").split("/");
+		for (const part of parts) {
+			if (part === "..") {
+				if (base.length > 0) base.pop();
+			} else if (part !== "." && part !== "") {
+				base.push(part);
+			}
+		}
+		return base.join("/");
+	}
+
 	private findFile(src: string): TFile | null {
 		const decoded = decodeURIComponent(src);
 		const nd = this.options.noteDir.replace(/^\/+|\/+$/g, "");
@@ -83,7 +100,15 @@ export class ImageManager {
 			}
 		}
 
-		// 5. 仅文件名在 vault 根目录
+		// 5. 以 ../ 开头 → 基于 noteDir 解析完整 vault 路径
+		if (nd && /^\.\.(?:\/|\\)/.test(decoded)) {
+			const resolved = this.resolveRelativePath(nd, decoded);
+			if (resolved && !candidates.includes(resolved)) {
+				candidates.push(resolved);
+			}
+		}
+
+		// 6. 仅文件名在 vault 根目录
 		const basename2 = cleaned.replace(/^.*[/\\]/, "");
 		if (basename2 !== cleaned && !candidates.includes(basename2)) {
 			candidates.push(basename2);

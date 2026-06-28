@@ -65,7 +65,7 @@ export class MarkdownParser {
 	private marked: Marked;
 
 	constructor(options: ParserOptions = {}) {
-		this.marked = new Marked();
+		this.marked = new Marked({ breaks: true });
 		this.marked.use(this.createMermaidExtension());
 		if (options.platformExtensions) {
 			for (const ext of options.platformExtensions) {
